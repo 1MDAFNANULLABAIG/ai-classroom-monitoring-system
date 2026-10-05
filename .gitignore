@@ -41,6 +41,21 @@ frontend/out/
 .env.test.local
 .env.production.local
 
+# Private Biometric Datasets & Face Samples
+face_data/dataset/
+face_data/dataset_teachers/
+face_data/trainer.yml
+face_data/trainer_teachers.yml
+
+# Private Evidence Video & Image Packages
+Evidence/
+static/exam_photos/
+static/activeness_photos/
+
+# Private Local Databases
+*.db
+*.sqlite3
+
 # Logs
 *.log
 npm-debug.log*
