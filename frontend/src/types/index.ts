@@ -23,6 +23,10 @@ export interface Student {
   class_name?: string;
   email: string;
   phone: string;
+  department?: string;
+  semester?: number;
+  section?: string;
+  admission_year?: string;
   status: string;
   sample_count: number;
   face_enrolled: boolean;

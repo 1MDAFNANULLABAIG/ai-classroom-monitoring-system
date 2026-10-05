@@ -8,6 +8,8 @@ import { Timetable } from './pages/Timetable';
 import { AttendanceRecords } from './pages/AttendanceRecords';
 import { AlertsFeed } from './pages/AlertsFeed';
 import { AnalyticsPage } from './pages/AnalyticsPage';
+import { Settings } from './pages/Settings';
+import { AboutProject } from './pages/AboutProject';
 import { Login } from './pages/Login';
 import { User } from './types';
 import { api, getAuthToken } from './services/api';
@@ -75,6 +77,8 @@ export function App() {
         {currentTab === 'attendance' && <AttendanceRecords />}
         {currentTab === 'alerts' && <AlertsFeed />}
         {currentTab === 'analytics' && <AnalyticsPage />}
+        {currentTab === 'settings' && <Settings />}
+        {currentTab === 'about' && <AboutProject />}
       </main>
 
       <footer className="border-t border-slate-900 bg-slate-950 py-4 text-center text-xs text-slate-500">

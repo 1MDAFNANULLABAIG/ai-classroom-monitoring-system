@@ -31,6 +31,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, user,
     { id: 'attendance', label: 'Attendance', icon: FileCheck2 },
     { id: 'alerts', label: 'Malpractice Alerts', icon: AlertTriangle },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'settings', label: 'Settings', icon: Cpu },
+    { id: 'about', label: 'About Project', icon: Activity },
   ];
 
   return (

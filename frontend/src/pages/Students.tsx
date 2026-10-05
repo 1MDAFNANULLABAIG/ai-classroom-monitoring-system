@@ -21,6 +21,10 @@ export const Students: React.FC = () => {
     roll_no: '',
     usn: '',
     class_id: 1,
+    department: 'ISE',
+    semester: 5,
+    section: 'A',
+    admission_year: '2023',
     email: '',
     phone: '',
   });
@@ -52,11 +56,19 @@ export const Students: React.FC = () => {
         roll_no: newStudent.roll_no,
         usn: newStudent.usn || newStudent.roll_no,
         class_id: newStudent.class_id,
+        department: newStudent.department,
+        semester: newStudent.semester,
+        section: newStudent.section,
+        admission_year: newStudent.admission_year,
         email: newStudent.email,
         phone: newStudent.phone,
       });
       setIsAddModalOpen(false);
-      setNewStudent({ name: '', roll_no: '', usn: '', class_id: classes[0]?.id || 1, email: '', phone: '' });
+      setNewStudent({ 
+        name: '', roll_no: '', usn: '', class_id: classes[0]?.id || 1, 
+        department: 'ISE', semester: 5, section: 'A', admission_year: '2023',
+        email: '', phone: '' 
+      });
       loadData();
       alert('Student registered successfully! Click "Enroll Face" to capture face samples.');
     } catch (err: any) {
@@ -247,8 +259,58 @@ export const Students: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Department</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. ISE, CSE, ECE"
+                    value={newStudent.department}
+                    onChange={(e) => setNewStudent({ ...newStudent, department: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Semester</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="8"
+                    required
+                    value={newStudent.semester}
+                    onChange={(e) => setNewStudent({ ...newStudent, semester: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Section</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. A, B, C"
+                    value={newStudent.section}
+                    onChange={(e) => setNewStudent({ ...newStudent, section: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Admission Year</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 2023"
+                    value={newStudent.admission_year}
+                    onChange={(e) => setNewStudent({ ...newStudent, admission_year: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Assigned Class</label>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Assigned Class / Batch</label>
                 <select
                   value={newStudent.class_id}
                   onChange={(e) => setNewStudent({ ...newStudent, class_id: Number(e.target.value) })}
@@ -262,15 +324,27 @@ export const Students: React.FC = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">Email (Optional)</label>
-                <input
-                  type="email"
-                  placeholder="student@college.edu"
-                  value={newStudent.email}
-                  onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Email</label>
+                  <input
+                    type="email"
+                    placeholder="student@college.edu"
+                    value={newStudent.email}
+                    onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={newStudent.phone}
+                    onChange={(e) => setNewStudent({ ...newStudent, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div className="pt-2 flex justify-end space-x-2">

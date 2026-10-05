@@ -32,6 +32,8 @@ import face_engine
 class ProductionEndToEndTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        app.DB_PATH = config.DB_PATH
+        app.init_db()
         cls.client = app.app.test_client()
 
     def test_01_auth_flow(self):

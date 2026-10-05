@@ -258,6 +258,10 @@ def create_student():
     class_id = data.get("class_id")
     email = data.get("email", "").strip()
     phone = data.get("phone", "").strip()
+    department = data.get("department", "ISE").strip()
+    semester = data.get("semester", 5)
+    section = data.get("section", "A").strip()
+    admission_year = data.get("admission_year", "2023").strip()
 
     if not name or not roll_no or not class_id:
         return jsonify({"success": False, "error": "Name, Roll No/USN, and Class are required."}), 400
@@ -266,8 +270,10 @@ def create_student():
     try:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO students (name, roll_no, usn, class_id, email, phone, status) VALUES (?, ?, ?, ?, ?, ?, 'active')",
-            (name, roll_no, usn, class_id, email, phone)
+            """INSERT INTO students 
+               (name, roll_no, usn, class_id, email, phone, department, current_semester, section, admission_year, status) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')""",
+            (name, roll_no, usn, class_id, email, phone, department, semester, section, admission_year)
         )
         conn.commit()
         new_id = cur.lastrowid
@@ -1405,7 +1411,20 @@ def register_websocket(sock):
 
 
 def init_api(app, sock=None):
-    """Registers API blueprint and WebSocket handler onto Flask app."""
+    """Registers API blueprint, WebSocket handler, and React SPA onto Flask app."""
+    from flask import send_from_directory
     app.register_blueprint(api_bp)
     if sock is not None:
         register_websocket(sock)
+
+    dist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+
+    @app.route("/app")
+    @app.route("/app/")
+    @app.route("/app/<path:path>")
+    def serve_frontend_spa(path=None):
+        if path and os.path.exists(os.path.join(dist_dir, path)):
+            return send_from_directory(dist_dir, path)
+        if os.path.exists(os.path.join(dist_dir, "index.html")):
+            return send_from_directory(dist_dir, "index.html")
+        return "React Frontend is building. Please refresh in a moment.", 200

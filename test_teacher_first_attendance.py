@@ -1,4 +1,4 @@
-﻿"""
+"""
 Comprehensive Test Suite for Teacher-First Attendance State Machine
 Tests 1 through 10 as specified in the Phase 2 requirements.
 """
@@ -23,6 +23,7 @@ from app import app, init_db
 
 class TeacherFirstAttendanceTests(unittest.TestCase):
     def setUp(self):
+        self.old_db_path = app_module.DB_PATH
         self.test_dir = tempfile.mkdtemp()
         self.test_db = os.path.join(self.test_dir, "test_attendance.db")
         app_module.DB_PATH = self.test_db
@@ -79,6 +80,7 @@ class TeacherFirstAttendanceTests(unittest.TestCase):
         self.conn.close()
         app_module.teacher_recognizer = None
         app_module.recognizer = None
+        app_module.DB_PATH = getattr(self, "old_db_path", app_module.DB_PATH)
         try:
             if os.path.exists(self.test_db):
                 os.remove(self.test_db)

@@ -67,6 +67,8 @@ class AdvancedAttendanceMonitoringTests(unittest.TestCase):
         }
 
     def setUp(self):
+        self.old_db_path = app_module.DB_PATH
+        self.old_config_db_path = config.DB_PATH
         self.test_dir = tempfile.mkdtemp()
         self.test_db = os.path.join(self.test_dir, "test_attendance.db")
         app_module.DB_PATH = self.test_db
@@ -99,6 +101,13 @@ class AdvancedAttendanceMonitoringTests(unittest.TestCase):
 
     def tearDown(self):
         self.conn.close()
+        app_module.DB_PATH = getattr(self, "old_db_path", app_module.DB_PATH)
+        config.DB_PATH = getattr(self, "old_config_db_path", config.DB_PATH)
+        try:
+            if os.path.exists(self.test_db):
+                os.remove(self.test_db)
+        except Exception:
+            pass
 
     def _make_dummy_embedding(self, seed=42):
         np.random.seed(seed)

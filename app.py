@@ -4339,6 +4339,8 @@ if __name__ == "__main__":
     ensure_face_dirs()
     load_recognizer()
     load_teacher_recognizer()
-    # use_reloader=False prevents duplicate process initialization competing for SQLite locks
+    port = int(os.environ.get("PORT", 5000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    debug = os.environ.get("FLASK_DEBUG", "false").lower() in ("true", "1")
     use_reloader = os.environ.get("FLASK_USE_RELOADER", "false").lower() in ("true", "1")
-    app.run(debug=True, use_reloader=use_reloader)
+    app.run(host=host, port=port, debug=debug, use_reloader=use_reloader)
