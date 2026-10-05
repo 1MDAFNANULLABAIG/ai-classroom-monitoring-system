@@ -3,7 +3,8 @@ services:
     name: ai-classroom-monitoring-system
     env: python
     region: oregon
-    plan: starter
+    plan: free
+    branch: main
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python app.py"
     envVars:
