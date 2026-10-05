@@ -1187,6 +1187,9 @@ def login_required(f):
 # ---------------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def index():
+    spa_index = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist", "index.html")
+    if os.path.exists(spa_index):
+        return redirect("/app/")
     if "user_id" in session:
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))

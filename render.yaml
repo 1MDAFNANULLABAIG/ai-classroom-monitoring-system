@@ -1,17 +1,21 @@
 services:
   - type: web
-    name: ai-classroom-monitoring-backend
+    name: ai-classroom-monitoring-system
     env: python
     region: oregon
-    plan: standard
+    plan: starter
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python app.py"
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: FLASK_ENV
         value: production
-      - key: PORT
-        value: 10000
-      - key: JWT_SECRET
-        generateValue: true
+      - key: FLASK_DEBUG
+        value: "false"
       - key: FLASK_USE_RELOADER
         value: "false"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: WAL_BUSY_TIMEOUT
+        value: "30000"
