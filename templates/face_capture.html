@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Capture Face - {{ person.name }}{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+    <div>
+        <h1 style="margin:0;">Face Enrollment — {{ person.name }} ({{ person.roll_no if person_kind == 'student' else person.teacher_code }})</h1>
+        <p class="muted" style="margin-top:4px;">
+            Target: <strong>{{ samples_target }} high-quality samples</strong> covering Frontal, Left, Right, Up, and Down angles.
+        </p>
+    </div>
+    <div style="display:flex; gap:8px;">
+        <button id="tab-photo-btn" class="btn btn-primary" onclick="switchMode('photo')">50 Guided Photos</button>
+        <button id="tab-video-btn" class="btn btn-secondary" onclick="switchMode('video')">60s Video Enrollment 🎥</button>
+    </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- MODE 1: 50 GUIDED PHOTO SAMPLES -->
+<!-- ============================================================= -->
+<div id="photo-enrollment-panel" class="panel">
+    <div id="guidance-banner" style="background:#e0f2fe; border:1px solid #38bdf8; border-radius:8px; padding:12px 16px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+            <div>
+                <strong style="color:#0369a1; font-size:1.05rem;" id="step-title">Step 1: Look Directly at Camera</strong>
+                <p id="step-desc" style="margin:4px 0 0 0; color:#0c4a6e; font-size:0.92rem;">
+                    Position your face in the center with a neutral expression and good lighting.
+                </p>
+            </div>
+            <span id="pose-badge" class="badge badge-present" style="font-size:0.88rem; padding:4px 10px;">FRONT</span>
+        </div>
+    </div>
+
+    <div style="position:relative; max-width:540px;">
+        <video id="video" width="540" height="400" autoplay muted playsinline
+               style="background:#000; border-radius:8px; width:100%; max-width:540px; display:block;"></video>
+        <canvas id="overlay" width="540" height="400"
+                style="position:absolute; top:0; left:0; width:100%; max-width:540px; pointer-events:none;"></canvas>
+        <canvas id="canvas" width="540" height="400" style="display:none;"></canvas>
+    </div>
+
+    <div style="margin-top:16px; max-width:540px;">
+        <div style="background:#e5e7eb; border-radius:6px; height:16px; overflow:hidden;">
+            <div id="progress-bar" style="background:#2563eb; height:100%; width:0%; transition:width .2s;"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+            <p id="progress-text" style="margin:0; font-weight:700;">Face samples captured: {{ existing_count }} / {{ samples_target }}</p>
+            <span id="quality-badge" class="badge badge-present" style="display:none;">Quality Pass</span>
+        </div>
+        <p id="status-text" class="muted" style="margin-top:6px;">Click "Start Capture" when ready.</p>
+    </div>
+
+    <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="start-btn" class="btn btn-primary">Start Capture</button>
+        <button id="stop-btn" class="btn btn-secondary" disabled>Stop</button>
+        <a href="{{ back_url }}" class="btn btn-secondary">Done / Back</a>
+    </div>
+</div>
+
+<!-- ============================================================= -->
+<!-- MODE 2: 60-SECOND MULTI-ANGLE VIDEO ENROLLMENT -->
+<!-- ============================================================= -->
+<div id="video-enrollment-panel" class="panel" style="display:none;">
+    <div style="background:#fef3c7; border:1px solid #f59e0b; border-radius:8px; padding:12px 16px; margin-bottom:16px;">
+        <strong style="color:#b45309; font-size:1.05rem;">🎥 60-Second Multi-Angle Video Enrollment</strong>
+        <p style="margin:4px 0 0 0; color:#78350f; font-size:0.92rem;">
+            Follow the on-screen countdown directions. The AI will automatically extract ~50 diverse, high-quality face samples across all poses and reject duplicate frames.
+        </p>
+    </div>
+
+    <div id="video-prompt-box" style="background:#1e293b; color:#fff; border-radius:8px; padding:16px; margin-bottom:16px; max-width:540px; text-align:center;">
+        <div style="font-size:1.8rem; font-weight:800; color:#38bdf8;" id="countdown-timer">60s</div>
+        <h3 id="stage-instruction" style="margin:8px 0 4px 0; color:#f8fafc;">Click "Start 60s Recording" to Begin</h3>
+        <p id="stage-subtext" class="muted" style="margin:0; color:#94a3b8;">Make sure your webcam is enabled and face is well-lit.</p>
+    </div>
+
+    <div style="position:relative; max-width:540px;">
+        <video id="video-rec" width="540" height="400" autoplay muted playsinline
+               style="background:#000; border-radius:8px; width:100%; max-width:540px; display:block;"></video>
+    </div>
+
+    <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="start-rec-btn" class="btn btn-primary">Start 60s Recording</button>
+        <button id="cancel-rec-btn" class="btn btn-secondary" disabled>Cancel</button>
+        <span id="rec-status-text" class="muted" style="align-self:center;"></span>
+    </div>
+</div>
+
+<script>
+const saveUrl = "{{ save_url }}";
+const enrollVideoUrl = "{{ url_for('teacher_face_enroll_video' if person_kind == 'teacher' else 'face_enroll_video', teacher_id=person.id if person_kind == 'teacher' else None, student_id=person.id if person_kind == 'student' else None) }}";
+const target = {{ samples_target }};
+let captured = {{ existing_count }};
+
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const progressBar = document.getElementById('progress-bar');
+const progressText = document.getElementById('progress-text');
+const statusText = document.getElementById('status-text');
+const qualityBadge = document.getElementById('quality-badge');
+const poseBadge = document.getElementById('pose-badge');
+const stepTitle = document.getElementById('step-title');
+const stepDesc = document.getElementById('step-desc');
+
+let stream = null;
+let captureTimer = null;
+let currentMode = 'photo';
+
+function switchMode(mode) {
+    currentMode = mode;
+    document.getElementById('photo-enrollment-panel').style.display = (mode === 'photo') ? 'block' : 'none';
+    document.getElementById('video-enrollment-panel').style.display = (mode === 'video') ? 'block' : 'none';
+    document.getElementById('tab-photo-btn').className = (mode === 'photo') ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('tab-video-btn').className = (mode === 'video') ? 'btn btn-primary' : 'btn btn-secondary';
+    if (mode === 'video') {
+        const vRec = document.getElementById('video-rec');
+        if (stream && !vRec.srcObject) vRec.srcObject = stream;
+    }
+}
+
+function updateGuidance() {
+    if (captured < 10) {
+        stepTitle.textContent = "Step 1: Look Directly at Camera (1-10)";
+        stepDesc.textContent = "Look straight ahead with a neutral expression and slight smile.";
+        poseBadge.textContent = "FRONT";
+    } else if (captured < 20) {
+        stepTitle.textContent = "Step 2: Turn Head to the LEFT (11-20)";
+        stepDesc.textContent = "Slightly turn head to the left, then medium left angle.";
+        poseBadge.textContent = "LEFT ANGLE";
+    } else if (captured < 30) {
+        stepTitle.textContent = "Step 3: Turn Head to the RIGHT (21-30)";
+        stepDesc.textContent = "Slightly turn head to the right, then medium right angle.";
+        poseBadge.textContent = "RIGHT ANGLE";
+    } else if (captured < 40) {
+        stepTitle.textContent = "Step 4: Tilt Head UPWARD (31-40)";
+        stepDesc.textContent = "Look slightly upward and hold steady.";
+        poseBadge.textContent = "UP ANGLE";
+    } else {
+        stepTitle.textContent = "Step 5: Tilt Head DOWNWARD (41-50)";
+        stepDesc.textContent = "Look slightly downward toward desk / camera.";
+        poseBadge.textContent = "DOWN ANGLE";
+    }
+}
+
+function updateProgress() {
+    const pct = Math.min(100, Math.round((captured / target) * 100));
+    progressBar.style.width = pct + '%';
+    progressText.textContent = `Face samples captured: ${captured} / ${target}`;
+    updateGuidance();
+    if (captured >= target) {
+        statusText.textContent = 'All 50 high-quality face samples captured! You can train the model now.';
+        stopCapture();
+    }
+}
+
+async function startCamera() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 540, height: 400 }, audio: false });
+        video.srcObject = stream;
+        const vRec = document.getElementById('video-rec');
+        if (vRec) vRec.srcObject = stream;
+    } catch (err) {
+        statusText.textContent = 'Could not access camera: ' + err.message;
+    }
+}
+
+function captureFrame() {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+
+    fetch(saveUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            captured = data.count;
+            statusText.textContent = `High-quality sample accepted (${data.pose || 'Good pose'}, quality: ${Math.round((data.quality||0.8)*100)}%).`;
+            qualityBadge.style.display = 'inline-block';
+            qualityBadge.textContent = `Quality: ${Math.round((data.quality||0.8)*100)}% (${data.pose})`;
+            qualityBadge.className = 'badge badge-present';
+            updateProgress();
+        } else {
+            statusText.textContent = data.message || 'Face quality insufficient — re-verifying';
+            qualityBadge.style.display = 'inline-block';
+            qualityBadge.textContent = 'Frame Rejected';
+            qualityBadge.className = 'badge badge-absent';
+        }
+    })
+    .catch(() => {
+        statusText.textContent = 'Network error while validating frame.';
+    });
+}
+
+function startCapture() {
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    statusText.textContent = 'Capturing high-quality samples... follow the guidance banner.';
+    captureTimer = setInterval(captureFrame, 400);
+}
+
+function stopCapture() {
+    clearInterval(captureTimer);
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+}
+
+startBtn.addEventListener('click', startCapture);
+stopBtn.addEventListener('click', stopCapture);
+
+// =============================================================
+// 60-SECOND VIDEO ENROLLMENT LOGIC
+// =============================================================
+let mediaRecorder = null;
+let recordedBlobs = [];
+let recTimer = null;
+let secondsRemaining = 60;
+
+const stages = [
+    { start: 0, end: 10, title: "1. Look straight at camera", desc: "Neutral expression and slight smile." },
+    { start: 10, end: 20, title: "2. Slowly turn head LEFT", desc: "Turn slightly, then to medium left angle." },
+    { start: 20, end: 30, title: "3. Slowly turn head RIGHT", desc: "Turn slightly, then to medium right angle." },
+    { start: 30, end: 40, title: "4. Look UP and return to center", desc: "Tilt head slightly up, then return to middle." },
+    { start: 40, end: 50, title: "5. Look DOWN and return to center", desc: "Tilt head slightly down, then return to middle." },
+    { start: 50, end: 60, title: "6. Natural head movement", desc: "Look around naturally and blink normally." }
+];
+
+function updateVideoPrompt(elapsed) {
+    for (const st of stages) {
+        if (elapsed >= st.start && elapsed < st.end) {
+            document.getElementById('stage-instruction').textContent = st.title;
+            document.getElementById('stage-subtext').textContent = st.desc;
+            break;
+        }
+    }
+}
+
+function startVideoRecording() {
+    if (!stream) return;
+    recordedBlobs = [];
+    try {
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+    } catch (e) {
+        mediaRecorder = new MediaRecorder(stream);
+    }
+
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) recordedBlobs.push(event.data);
+    };
+
+    mediaRecorder.onstop = uploadVideoEnrollment;
+    mediaRecorder.start(1000);
+
+    secondsRemaining = 60;
+    document.getElementById('start-rec-btn').disabled = true;
+    document.getElementById('cancel-rec-btn').disabled = false;
+    document.getElementById('rec-status-text').textContent = "Recording enrollment video...";
+
+    recTimer = setInterval(() => {
+        secondsRemaining--;
+        const elapsed = 60 - secondsRemaining;
+        document.getElementById('countdown-timer').textContent = `${secondsRemaining}s`;
+        updateVideoPrompt(elapsed);
+
+        if (secondsRemaining <= 0) {
+            stopVideoRecording();
+        }
+    }, 1000);
+}
+
+function stopVideoRecording() {
+    clearInterval(recTimer);
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+    }
+    document.getElementById('countdown-timer').textContent = "Processing...";
+    document.getElementById('stage-instruction').textContent = "Extracting Diverse Samples...";
+    document.getElementById('stage-subtext').textContent = "AI is selecting optimal frames across all head angles.";
+    document.getElementById('cancel-rec-btn').disabled = true;
+}
+
+function uploadVideoEnrollment() {
+    const videoBlob = new Blob(recordedBlobs, { type: 'video/webm' });
+    const formData = new FormData();
+    formData.append('video', videoBlob, 'enrollment.webm');
+
+    document.getElementById('rec-status-text').textContent = "Uploading & processing on server...";
+
+    fetch(enrollVideoUrl, {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            captured = data.count;
+            updateProgress();
+            document.getElementById('countdown-timer').textContent = "Done! 🎉";
+            document.getElementById('stage-instruction').textContent = `Extracted ${data.extracted} Samples!`;
+            document.getElementById('stage-subtext').textContent = data.message;
+            document.getElementById('rec-status-text').textContent = "Enrollment successful. You can now train the model.";
+            document.getElementById('start-rec-btn').disabled = false;
+        } else {
+            document.getElementById('rec-status-text').textContent = "Extraction failed: " + (data.message || 'Error');
+            document.getElementById('start-rec-btn').disabled = false;
+        }
+    })
+    .catch(() => {
+        document.getElementById('rec-status-text').textContent = "Network error during video upload.";
+        document.getElementById('start-rec-btn').disabled = false;
+    });
+}
+
+document.getElementById('start-rec-btn').addEventListener('click', startVideoRecording);
+document.getElementById('cancel-rec-btn').addEventListener('click', () => {
+    clearInterval(recTimer);
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    document.getElementById('start-rec-btn').disabled = false;
+    document.getElementById('cancel-rec-btn').disabled = true;
+    document.getElementById('rec-status-text').textContent = "Recording cancelled.";
+});
+
+startCamera();
+updateProgress();
+</script>
+{% endblock %}

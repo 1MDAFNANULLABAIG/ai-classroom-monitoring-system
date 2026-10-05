@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Classes{% endblock %}
+{% block content %}
+<h1>Classes</h1>
+
+<div class="panel">
+    <h3>Add New Class</h3>
+    <form method="POST" class="inline-form">
+        <input type="text" name="name" placeholder="e.g. Grade 10 - Section B" required>
+        <button type="submit" class="btn btn-primary">Add Class</button>
+    </form>
+</div>
+
+<table class="table">
+    <thead>
+        <tr><th>Class Name</th><th># Students</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for c in classes %}
+        <tr>
+            <td>{{ c.name }}</td>
+            <td>{{ c.student_count }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('delete_class', class_id=c.id) }}"
+                      onsubmit="return confirm('Delete this class and all its students/attendance records?');" style="display:inline">
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="3" class="muted">No classes yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

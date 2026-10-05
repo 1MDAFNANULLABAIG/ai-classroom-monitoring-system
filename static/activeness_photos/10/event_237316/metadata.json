@@ -1,0 +1,23 @@
+{
+    "event_id": "EVENT_237316",
+    "session_id": 10,
+    "usn": "UNKNOWN",
+    "student_name": "Unknown",
+    "track_id": "TRACK_01",
+    "event_type": "LEAVING_SEAT",
+    "timestamp": "2026-09-20T12:07:17",
+    "duration_seconds": 3.0,
+    "confidence": 0.0,
+    "identity_source": "UNKNOWN",
+    "status": "REVIEW_REQUIRED",
+    "detail": "",
+    "video_path": "activeness_photos/10/event_237316/evidence.mp4",
+    "photos": [
+        "activeness_photos/10/event_237316/before.jpg",
+        "activeness_photos/10/event_237316/event_start.jpg",
+        "activeness_photos/10/event_237316/best_event.jpg",
+        "activeness_photos/10/event_237316/event_end.jpg",
+        "activeness_photos/10/event_237316/after.jpg",
+        "activeness_photos/10/event_237316/student_crop.jpg"
+    ]
+}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Allocate Seats{% endblock %}
+{% block content %}
+<h1>🎟️ {{ sess.exam_name }} — {{ sess.room_name }}</h1>
+<p class="muted">
+    Allocate the students sitting this exam in this room, by USN. Only allocated
+    students can be identified during monitoring — this keeps face-matching
+    accurate by checking each face against a small, known roster instead of
+    the whole school.
+</p>
+
+<div style="display:flex; gap:24px; flex-wrap:wrap;">
+    <div class="panel" style="flex:1; min-width:320px;">
+        <h3>Add by USN</h3>
+        <form method="POST" class="inline-form">
+            <input type="text" name="roll_no" placeholder="USN / Roll No." required>
+            <input type="text" name="seat_no" placeholder="Seat no. (optional)" style="max-width:140px;">
+            <button type="submit" class="btn btn-primary">Allocate</button>
+        </form>
+
+        {% if sess.class_id and class_students %}
+        <hr style="margin:16px 0; border:none; border-top:1px solid #e5e7eb;">
+        <h3>Bulk-allocate from class</h3>
+        <p class="muted">{{ class_students|length }} student(s) from the linked class not yet allocated here.</p>
+        <form method="POST" action="{{ url_for('exam_session_allocate_bulk', session_id=sess.id) }}">
+            <button type="submit" class="btn btn-secondary">Allocate all remaining, auto-number seats</button>
+        </form>
+        {% endif %}
+
+        <p style="margin-top:16px;">
+            <a href="{{ url_for('exam_session_monitor', session_id=sess.id) }}" class="btn btn-primary">
+                Start Monitoring →
+            </a>
+        </p>
+    </div>
+
+    <div class="panel" style="flex:1; min-width:340px;">
+        <h3>Allocated Seats ({{ allocations|length }} / {{ sess.capacity }} capacity)</h3>
+        <table class="table">
+            <thead><tr><th>Seat</th><th>USN</th><th>Name</th><th></th></tr></thead>
+            <tbody>
+            {% for a in allocations %}
+                <tr>
+                    <td>{{ a.seat_no or '—' }}</td>
+                    <td>{{ a.roll_no }}</td>
+                    <td>{{ a.name }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('exam_session_allocate_remove', session_id=sess.id, alloc_id=a.alloc_id) }}" style="display:inline">
+                            <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="muted">No seats allocated yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<p style="margin-top:16px;"><a href="{{ url_for('exam_sessions_list') }}" class="btn btn-secondary btn-sm">← Back to Exam Sessions</a></p>
+{% endblock %}

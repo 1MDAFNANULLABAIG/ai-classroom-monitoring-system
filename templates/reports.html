@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<h1>Attendance Reports</h1>
+
+<form method="GET" class="inline-form">
+    <select name="class_id">
+        <option value="">All Classes</option>
+        {% for c in classes %}
+        <option value="{{ c.id }}" {% if selected_class == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    <label>From</label>
+    <input type="date" name="start_date" value="{{ start_date }}">
+    <label>To</label>
+    <input type="date" name="end_date" value="{{ end_date }}">
+    <button type="submit" class="btn btn-primary">Filter</button>
+    <a class="btn btn-secondary"
+       href="{{ url_for('export_report', class_id=selected_class, start_date=start_date, end_date=end_date) }}">
+       Export CSV
+    </a>
+</form>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Roll No</th><th>Name</th><th>Class</th>
+            <th>Present</th><th>Absent</th><th>Late</th><th>Attendance %</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for r in report_data %}
+        <tr>
+            <td>{{ r.roll_no }}</td>
+            <td>{{ r.name }}</td>
+            <td>{{ r.class_name }}</td>
+            <td>{{ r.present_count }}</td>
+            <td>{{ r.absent_count }}</td>
+            <td>{{ r.late_count }}</td>
+            <td>
+                <span class="badge {% if r.percentage >= 75 %}badge-present{% elif r.percentage >= 50 %}badge-late{% else %}badge-absent{% endif %}">
+                    {{ r.percentage }}%
+                </span>
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="7" class="muted">No data found for the selected filters.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ student.name }} — Behavior{% endblock %}
+{% block content %}
+<h1>{{ student.name }} <span class="muted" style="font-size:0.6em;">({{ student.roll_no }} · {{ student.class_name }})</span></h1>
+
+<a href="{{ url_for('behavior_dashboard', class_id=student.class_id) }}" class="btn btn-secondary">&larr; Back to Behavior Prediction</a>
+
+<div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:16px;">
+    <div class="panel" style="flex:1; min-width:300px;">
+        <h3>Risk Score</h3>
+        <p style="font-size:2.2rem; margin:4px 0;">
+            <span class="badge badge-severity-{{ risk.level|lower }}" style="font-size:1rem;">{{ risk.level }}</span>
+            <span class="muted" style="font-size:1rem;">{{ risk.score }}/100</span>
+        </p>
+        {% if risk.trend == 'rising' %}
+            <p><span class="badge badge-severity-high">Rising</span> <span class="muted">incidents are becoming more frequent</span></p>
+        {% elif risk.trend == 'easing' %}
+            <p><span class="badge badge-present">Easing</span> <span class="muted">incidents have slowed down</span></p>
+        {% endif %}
+
+        <h4 style="margin-top:16px;">Why this score</h4>
+        <ul>
+        {% for f in risk.factors %}
+            <li>{{ f }}</li>
+        {% endfor %}
+        </ul>
+        <p class="muted" style="margin-top:12px;">
+            Based on the last {{ lookback_days }} days. This is a heuristic
+            early-warning indicator built from logged incidents and attendance —
+            use it to decide who to check in with, not as disciplinary proof.
+        </p>
+    </div>
+
+    <div class="panel" style="flex:1; min-width:300px;">
+        <h3>Log an Incident</h3>
+        <form method="POST" action="{{ url_for('behavior_flag_add') }}">
+            <input type="hidden" name="student_id" value="{{ student.id }}">
+            <input type="hidden" name="class_id" value="{{ student.class_id }}">
+            <input type="hidden" name="next" value="{{ url_for('behavior_student_detail', student_id=student.id) }}">
+
+            <label>Incident type</label>
+            <select name="flag_type" required>
+                {% for t in flag_types %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Severity</label>
+            <select name="severity">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+            </select>
+
+            <label>Note (optional)</label>
+            <textarea name="note" rows="3" placeholder="Brief, factual description…"></textarea>
+
+            <button type="submit" class="btn btn-primary" style="margin-top:8px;">Log Incident</button>
+        </form>
+    </div>
+</div>
+
+<div class="panel" style="margin-top:24px;">
+    <h3>Incident History</h3>
+    <table class="table">
+        <thead>
+            <tr><th>Date</th><th>Type</th><th>Severity</th><th>Note</th><th>Logged By</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for f in flags %}
+            <tr>
+                <td>{{ f.created_at }}</td>
+                <td>{{ f.flag_type }}</td>
+                <td><span class="badge badge-severity-{{ f.severity }}">{{ f.severity|capitalize }}</span></td>
+                <td>{{ f.note or '—' }}</td>
+                <td>{{ f.created_by or '—' }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('behavior_flag_delete', flag_id=f.id) }}" onsubmit="return confirm('Remove this incident record?');">
+                        <button type="submit" class="btn btn-secondary btn-sm">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="6" class="muted">No incidents logged for this student.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

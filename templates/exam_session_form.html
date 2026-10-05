@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}New Exam Session{% endblock %}
+{% block content %}
+<h1>New Exam Session</h1>
+<p class="muted">Create the exam sitting for a room, then allocate students by USN on the next screen.</p>
+
+<div class="panel">
+<form method="POST">
+    <label>Exam Name</label>
+    <input type="text" name="exam_name" placeholder="e.g. Midterm — Data Structures" required>
+
+    <label>Room</label>
+    <select name="room_id" required>
+        <option value="">Select a room…</option>
+        {% for r in rooms %}
+        <option value="{{ r.id }}">{{ r.room_name }} (capacity {{ r.capacity }})</option>
+        {% endfor %}
+    </select>
+
+    <label>Linked Class (optional)</label>
+    <select name="class_id">
+        <option value="">— None / manual USN entry only —</option>
+        {% for c in classes %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    <p class="muted" style="margin:4px 0 0;">
+        If set, you'll be able to bulk-allocate the whole class's roster with one click on the next screen.
+    </p>
+
+    <button type="submit" class="btn btn-primary" style="margin-top:16px;">Create &amp; Allocate Seats</button>
+    <a href="{{ url_for('exam_sessions_list') }}" class="btn btn-secondary">Cancel</a>
+</form>
+</div>
+{% endblock %}

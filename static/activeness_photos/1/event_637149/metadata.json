@@ -1,0 +1,23 @@
+{
+    "event_id": "EVENT_637149",
+    "session_id": 1,
+    "usn": "UNKNOWN",
+    "student_name": "Unknown",
+    "track_id": "TRACK_01",
+    "event_type": "PHONE_USAGE",
+    "timestamp": "2026-09-20T11:23:57",
+    "duration_seconds": 3.0,
+    "confidence": 0.0,
+    "identity_source": "UNKNOWN",
+    "status": "REVIEW_REQUIRED",
+    "detail": "",
+    "video_path": "activeness_photos/1/event_637149/evidence.mp4",
+    "photos": [
+        "activeness_photos/1/event_637149/before.jpg",
+        "activeness_photos/1/event_637149/event_start.jpg",
+        "activeness_photos/1/event_637149/best_event.jpg",
+        "activeness_photos/1/event_637149/event_end.jpg",
+        "activeness_photos/1/event_637149/after.jpg",
+        "activeness_photos/1/event_637149/student_crop.jpg"
+    ]
+}

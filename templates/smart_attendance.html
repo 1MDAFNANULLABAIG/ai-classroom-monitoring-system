@@ -1,0 +1,458 @@
+{% extends "base.html" %}
+{% block title %}Smart Attendance{% endblock %}
+{% block content %}
+<h1>🎓 Smart Period Attendance</h1>
+<p class="muted">
+    Point the camera at the teacher when a period starts — the system identifies who's
+    teaching and which period it is from the timetable, then automatically switches to
+    recognizing students for that period. Student attendance is <strong>only</strong> ever
+    taken once the teacher has been face-confirmed present for that period — including
+    during the break before the period starts, no student can be marked until then.
+</p>
+
+<div class="panel">
+    <h3><i class="fa-solid fa-chalkboard-user" style="color: var(--purple);"></i> Teachers Present Now</h3>
+    <p class="muted">Live — updates automatically. A class only appears here once a teacher has been face-confirmed present for it.</p>
+    <table class="table" id="teacher-sessions-table">
+        <thead>
+            <tr><th>Teacher</th><th>Class</th><th>Subject</th><th>Since</th><th>Status</th><th>Students Sitting</th></tr>
+        </thead>
+        <tbody id="teacher-sessions-body">
+        {% if teacher_sessions %}
+            {% for s in teacher_sessions %}
+            <tr>
+                <td>{{ s.teacher_name or 'Unassigned' }}</td>
+                <td>{{ s.class_name }}</td>
+                <td>{{ s.subject or '-' }}</td>
+                <td>{{ s.started_at }}</td>
+                <td>
+                    {% if s.teacher_status == 'absent' %}
+                        <span class="badge badge-absent">Teacher Absent (auto)</span>
+                    {% elif s.teacher_status == 'late' %}
+                        <span class="badge badge-late">Teacher Late</span>
+                    {% else %}
+                        <span class="badge badge-present">Present</span>
+                    {% endif %}
+                </td>
+                <td><span class="badge badge-present">{{ s.present_count }} / {{ s.total_students }}</span></td>
+            </tr>
+            {% endfor %}
+        {% else %}
+            <tr><td colspan="6" class="muted">No teacher is currently present in any class.</td></tr>
+        {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+function renderTeacherSessions(sessions) {
+    const body = document.getElementById('teacher-sessions-body');
+    if (!sessions.length) {
+        body.innerHTML = '<tr><td colspan="6" class="muted">No teacher is currently present in any class.</td></tr>';
+        return;
+    }
+    body.innerHTML = sessions.map(s => {
+        let statusBadge = '<span class="badge badge-present">Present</span>';
+        if (s.teacher_status === 'absent') statusBadge = '<span class="badge badge-absent">Teacher Absent (auto)</span>';
+        else if (s.teacher_status === 'late') statusBadge = '<span class="badge badge-late">Teacher Late</span>';
+        return `
+        <tr>
+            <td>${s.teacher_name || 'Unassigned'}</td>
+            <td>${s.class_name}</td>
+            <td>${s.subject || '-'}</td>
+            <td>${s.started_at}</td>
+            <td>${statusBadge}</td>
+            <td><span class="badge badge-present">${s.present_count} / ${s.total_students}</span></td>
+        </tr>
+    `;
+    }).join('');
+}
+
+function pollTeacherSessions() {
+    fetch('/api/teacher-sessions')
+        .then(r => r.json())
+        .then(renderTeacherSessions)
+        .catch(() => {});
+}
+
+setInterval(pollTeacherSessions, 6000);
+</script>
+
+<form method="GET" class="inline-form">
+    <select name="class_id" onchange="this.form.submit()">
+        {% for c in classes %}
+        <option value="{{ c.id }}" {% if selected_class == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    <a href="{{ url_for('timetable', class_id=selected_class) }}" class="btn btn-secondary">Edit Timetable</a>
+</form>
+
+{% if not model_trained or not teacher_model_trained %}
+<div class="flash flash-warning">
+    {% if not teacher_model_trained %}You need to train the <a href="{{ url_for('teachers') }}">teacher recognition model</a> first. {% endif %}
+    {% if not model_trained %}You need to train the <a href="{{ url_for('face_setup') }}">student recognition model</a> first.{% endif %}
+</div>
+{% elif not classes %}
+<div class="flash flash-warning">Add a class first.</div>
+{% else %}
+
+<div style="display:flex; gap:24px; flex-wrap:wrap;">
+    <div class="panel" style="flex:1; min-width:340px;">
+        <div id="period-banner" class="panel" style="background:#eef2ff; margin-bottom:16px;">
+            <p class="muted">Checking current period...</p>
+        </div>
+
+        <div style="position:relative; max-width:480px;">
+            <video id="video" width="480" height="360" autoplay muted playsinline
+                   style="background:#000; border-radius:8px; width:100%; max-width:480px; display:block;"></video>
+            <canvas id="overlay" width="480" height="360"
+                    style="position:absolute; top:0; left:0; width:100%; max-width:480px; pointer-events:none;"></canvas>
+            <canvas id="capture-canvas" width="480" height="360" style="display:none;"></canvas>
+        </div>
+        <p id="status-text" class="muted" style="margin-top:10px;">Click "Start Camera" to begin.</p>
+        <button id="start-btn" class="btn btn-primary">Start Camera</button>
+        <button id="stop-btn" class="btn btn-secondary" disabled>Stop</button>
+        <button id="end-session-btn" class="btn btn-danger" style="display:none;">End Period</button>
+        <button id="reset-session-btn" class="btn btn-secondary" style="display:none;" title="Testing only: deletes today's session for this period so the camera waits for the teacher again">Reset Test Session</button>
+    </div>
+
+    <div class="panel" style="flex:1; min-width:280px;">
+        <h3 id="roster-title">Roster</h3>
+        <table class="table" id="roster-table">
+            <thead><tr><th>Roll No</th><th>Name</th><th>Status</th></tr></thead>
+            <tbody id="roster-body">
+                <tr><td colspan="3" class="muted">Waiting for a period to start...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const classId = "{{ selected_class }}";
+const gracePeriodMinutes = {{ auto_absent_grace_minutes }};
+
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const captureCanvas = document.getElementById('capture-canvas');
+const captureCtx = captureCanvas.getContext('2d');
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const endSessionBtn = document.getElementById('end-session-btn');
+const resetSessionBtn = document.getElementById('reset-session-btn');
+const statusText = document.getElementById('status-text');
+const periodBanner = document.getElementById('period-banner');
+const rosterTitle = document.getElementById('roster-title');
+const rosterBody = document.getElementById('roster-body');
+
+let stream = null;
+let workTimer = null;
+let stateTimer = null;
+let currentPeriod = null;
+let currentSession = null; // {id, teacher_name, subject}
+let currentState = 'IDLE'; // WAITING_FOR_TEACHER | TEACHER_CONFIRMED | TEACHER_ABSENT_AUTO_ATTENDANCE | TEACHER_LATE | SESSION_ENDED | IDLE
+let mode = 'idle'; // idle | awaiting_teacher | marking_students | ended
+let countdownSeconds = 0;
+let countdownTimer = null;
+
+function formatTime(totalSec) {
+    if (totalSec <= 0) return '00:00';
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function syncCountdown(sec) {
+    countdownSeconds = Math.max(0, sec);
+    const el = document.getElementById('grace-timer');
+    if (el) el.textContent = formatTime(countdownSeconds);
+    if (!countdownTimer) {
+        countdownTimer = setInterval(() => {
+            if (countdownSeconds > 0) {
+                countdownSeconds--;
+                const timerEl = document.getElementById('grace-timer');
+                if (timerEl) timerEl.textContent = formatTime(countdownSeconds);
+                if (countdownSeconds === 0 && currentState === 'WAITING_FOR_TEACHER') {
+                    pollState();
+                }
+            }
+        }, 1000);
+    }
+}
+
+function renderBanner(data) {
+    if (!currentPeriod) {
+        periodBanner.innerHTML = '<p class="muted">No period scheduled right now.</p>';
+        return;
+    }
+    if (currentPeriod.period_type === 'break') {
+        periodBanner.innerHTML = `<p>☕ <strong>${currentPeriod.subject || 'Break'}</strong> (${currentPeriod.start_time}–${currentPeriod.end_time}) — no attendance during breaks.</p>`;
+        return;
+    }
+
+    let stateHtml = '';
+    const subject = (currentSession && currentSession.subject) || currentPeriod.subject || ('Period ' + currentPeriod.period_number);
+    const periodTime = `(${currentPeriod.start_time}–${currentPeriod.end_time})`;
+
+    if (currentState === 'WAITING_FOR_TEACHER') {
+        stateHtml = `
+            <div style="background:var(--amber-light, #fef3c7); border:1px solid var(--amber-text, #f59e0b); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <span style="font-weight:700; color:var(--amber-text, #b45309); font-size:1.05rem;">⏳ WAITING FOR TEACHER</span>
+                    <span style="background:#b45309; color:#fff; padding:4px 10px; border-radius:6px; font-weight:700; font-family:monospace; font-size:1.15rem;">
+                        <span id="grace-timer">${formatTime(countdownSeconds)}</span>
+                    </span>
+                </div>
+                <p style="margin:6px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    Teacher grace period: <strong>${data && data.grace_deadline ? data.grace_deadline : '30 min from start'}</strong>. Student attendance is locked until teacher is recognized or grace expires.
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'TEACHER_CONFIRMED') {
+        stateHtml = `
+            <div style="background:var(--green-light, #ecfdf5); border:1px solid var(--green-text, #10b981); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--green-text, #065f46); font-size:1.05rem;">✅ TEACHER VERIFIED &middot; STUDENT ATTENDANCE ENABLED</div>
+                <p style="margin:4px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    Teacher: <strong>${currentSession ? (currentSession.teacher_name || 'Confirmed') : 'Confirmed'}</strong> (Present on time)
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'TEACHER_ABSENT_AUTO_ATTENDANCE') {
+        stateHtml = `
+            <div style="background:var(--red-light, #fee2e2); border:1px solid var(--red-text, #ef4444); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--red-text, #991b1b); font-size:1.05rem;">🚫 TEACHER ABSENT &middot; AUTOMATIC ATTENDANCE ACTIVE</div>
+                <p style="margin:4px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    30-minute grace period elapsed without teacher. Automatic student attendance rule is active — camera scanning student faces directly.
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'TEACHER_LATE') {
+        stateHtml = `
+            <div style="background:var(--amber-light, #fffbeb); border:1px solid var(--amber-text, #d97706); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--amber-text, #92400e); font-size:1.05rem;">⏰ TEACHER LATE &middot; STUDENT ATTENDANCE ACTIVE</div>
+                <p style="margin:4px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    Teacher: <strong>${currentSession ? (currentSession.teacher_name || 'Late') : 'Late'}</strong> (Arrived after 30-minute grace period).
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'SESSION_ENDED') {
+        stateHtml = `
+            <div style="background:var(--blue-light, #f1f5f9); border:1px solid var(--muted, #94a3b8); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--ink); font-size:1.05rem;">🏁 SESSION ENDED</div>
+                <p style="margin:4px 0 0 0; color:var(--muted); font-size:0.9rem;">Attendance for this period is closed.</p>
+            </div>
+        `;
+    }
+
+    periodBanner.innerHTML = `
+        <p>📘 <strong>${subject}</strong> ${periodTime}</p>
+        ${stateHtml}
+        <p>✅ Present: <strong>${(currentSession && currentSession.present_count != null) ? currentSession.present_count : 0} / ${(currentSession && currentSession.total_students != null) ? currentSession.total_students : '?'}</strong></p>
+    `;
+}
+
+function pollState() {
+    fetch(`/attendance/smart/state?class_id=${classId}`)
+    .then(r => r.json())
+    .then(data => {
+        currentPeriod = data.period;
+        currentSession = data.session;
+        currentState = data.state || 'IDLE';
+
+        if (currentState === 'WAITING_FOR_TEACHER') {
+            syncCountdown(data.remaining_seconds || 0);
+            mode = 'awaiting_teacher';
+            endSessionBtn.style.display = 'none';
+            resetSessionBtn.style.display = 'none';
+            rosterTitle.textContent = 'Roster (Locked)';
+            rosterBody.innerHTML = '<tr><td colspan="3" class="muted">Point camera at teacher to unlock attendance. Student attendance locked during grace period.</td></tr>';
+        } else if (currentState === 'SESSION_ENDED') {
+            countdownSeconds = 0;
+            mode = 'ended';
+            endSessionBtn.style.display = 'none';
+            resetSessionBtn.style.display = 'inline-block';
+            rosterTitle.textContent = `Roster — ${currentSession ? (currentSession.subject || '') : ''} (period ended)`;
+            loadRoster();
+        } else if (data.student_attendance_allowed && currentSession) {
+            countdownSeconds = 0;
+            mode = 'marking_students';
+            endSessionBtn.style.display = 'inline-block';
+            resetSessionBtn.style.display = 'inline-block';
+            rosterTitle.textContent = `Roster — ${currentSession.subject || ''}`;
+            loadRoster();
+        } else {
+            countdownSeconds = 0;
+            mode = 'idle';
+            endSessionBtn.style.display = 'none';
+            resetSessionBtn.style.display = 'none';
+            rosterBody.innerHTML = '<tr><td colspan="3" class="muted">No active period.</td></tr>';
+        }
+
+        renderBanner(data);
+    })
+    .catch(() => {});
+}
+
+function loadRoster() {
+    if (!currentSession) return;
+    fetch(`/attendance/smart/roster?session_id=${currentSession.id}`)
+    .then(r => r.json())
+    .then(rows => {
+        if (!rows.length) {
+            rosterBody.innerHTML = '<tr><td colspan="3" class="muted">No students in this class.</td></tr>';
+            return;
+        }
+        rosterBody.innerHTML = rows.map(s => {
+            let badgeClass = 'badge-absent';
+            if (s.status === 'Present') badgeClass = 'badge-present';
+            return `<tr><td>${s.roll_no}</td><td>${s.name}</td><td><span class="badge ${badgeClass}">${s.status}</span></td></tr>`;
+        }).join('');
+    });
+}
+
+async function startCamera() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 }, audio: false });
+        video.srcObject = stream;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusText.textContent = 'Camera running...';
+        workTimer = setInterval(tick, 1500);
+    } catch (err) {
+        statusText.textContent = 'Could not access camera: ' + err.message;
+    }
+}
+
+function stopCamera() {
+    clearInterval(workTimer);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    statusText.textContent = 'Camera stopped.';
+}
+
+function drawBoxes(faces) {
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    (faces || []).forEach(f => {
+        let color = '#f59e0b'; // unknown / orange
+        if (f.status === 'marked') color = '#10b981';
+        else if (f.status === 'already_marked') color = '#3b82f6';
+        else if (f.status === 'teacher') color = '#8b5cf6';
+        else if (f.status === 'review') color = '#eab308'; // under review / yellow
+
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = 3;
+        overlayCtx.strokeRect(f.x, f.y, f.w, f.h);
+
+        let label = (f.track_id ? `[#${f.track_id}] ` : '') + (f.name || 'Unknown');
+        if (f.confidence) label += ` (${f.confidence}%)`;
+        overlayCtx.fillStyle = color;
+        const textWidth = overlayCtx.measureText(label).width + 12;
+        overlayCtx.fillRect(f.x, f.y - 20, textWidth, 20);
+        overlayCtx.fillStyle = '#fff';
+        overlayCtx.font = 'bold 12px sans-serif';
+        overlayCtx.fillText(label, f.x + 5, f.y - 5);
+    });
+}
+
+function tick() {
+    if (mode === 'idle') {
+        statusText.textContent = 'No class period scheduled right now.';
+        return;
+    }
+    if (mode === 'ended') {
+        statusText.textContent = 'This period has ended — attendance is closed.';
+        return;
+    }
+    captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.8);
+
+    if (mode === 'awaiting_teacher') {
+        statusText.textContent = `Looking for scheduled teacher... Grace period: ${formatTime(countdownSeconds)}`;
+        fetch('/attendance/smart/start_session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: dataUrl, class_id: classId })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                statusText.textContent = `Teacher verified: ${data.teacher_name}. Student attendance enabled!`;
+                pollState();
+            } else {
+                statusText.textContent = data.message || 'Waiting for scheduled teacher to face the camera.';
+            }
+        })
+        .catch(() => { statusText.textContent = 'Network error while checking teacher face.'; });
+    } else if (mode === 'marking_students' && currentSession) {
+        // If the teacher arrived late after grace period, check for them in parallel
+        if (currentSession.teacher_status === 'absent') {
+            fetch('/attendance/smart/start_session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: dataUrl, class_id: classId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.teacher_name) {
+                    statusText.textContent = `Teacher arrived late: ${data.teacher_name}. Status updated.`;
+                    pollState();
+                }
+            });
+        }
+
+        statusText.textContent = 'Recognizing students...';
+        fetch('/attendance/smart/mark_student', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: dataUrl, session_id: currentSession.id })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                statusText.textContent = data.message || 'Recognition error.';
+                return;
+            }
+            drawBoxes(data.faces);
+            currentSession.present_count = data.present_count;
+            currentSession.total_students = data.total_students;
+            renderBanner();
+            if (data.newly_marked && data.newly_marked.length) loadRoster();
+            statusText.textContent = data.faces.length ? `Detected: ${data.faces.map(f => f.name).join(', ')}` : 'No face in frame.';
+        });
+    }
+}
+
+endSessionBtn.addEventListener('click', () => {
+    if (!currentSession) return;
+    if (!confirm('End this period now?')) return;
+    fetch('/attendance/smart/end_session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: currentSession.id })
+    }).then(() => pollState());
+});
+
+resetSessionBtn.addEventListener('click', () => {
+    if (!confirm("Reset today's session for this period? This deletes any attendance marked so far and makes the camera wait for the teacher again. (Testing only.)")) return;
+    fetch('/attendance/smart/reset_session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ class_id: classId })
+    })
+    .then(r => r.json())
+    .then(data => {
+        statusText.textContent = data.message || (data.success ? 'Session reset.' : 'Could not reset session.');
+        pollState();
+    });
+});
+
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click', stopCamera);
+
+pollState();
+stateTimer = setInterval(pollState, 5000);
+</script>
+{% endif %}
+{% endblock %}

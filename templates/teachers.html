@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Teachers{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Teachers</h1>
+    <a href="{{ url_for('add_teacher') }}" class="btn btn-primary">+ Add Teacher</a>
+</div>
+
+<table class="table">
+    <thead>
+        <tr><th>Teacher Code</th><th>Name</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for t in teachers %}
+        <tr>
+            <td>{{ t.teacher_code }}</td>
+            <td>{{ t.name }}</td>
+            <td>{{ t.email or '-' }}</td>
+            <td>{{ t.phone or '-' }}</td>
+            <td>
+                <a href="{{ url_for('edit_teacher', teacher_id=t.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+                <a href="{{ url_for('teacher_face_capture', teacher_id=t.id) }}" class="btn btn-secondary btn-sm">Capture Face</a>
+                <form method="POST" action="{{ url_for('delete_teacher', teacher_id=t.id) }}"
+                      onsubmit="return confirm('Delete this teacher?');" style="display:inline">
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="5" class="muted">No teachers yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<div class="panel" style="margin-top:20px;">
+    <h3>Teacher Recognition Model</h3>
+    <p class="muted">
+        After capturing faces for your teachers, train the recognition model so
+        Smart Attendance can identify who's teaching a period.
+    </p>
+    <form method="POST" action="{{ url_for('teacher_face_train') }}"
+          onsubmit="return confirm('Train the teacher recognition model now?');">
+        <button type="submit" class="btn btn-primary">Train Teacher Model</button>
+    </form>
+</div>
+{% endblock %}

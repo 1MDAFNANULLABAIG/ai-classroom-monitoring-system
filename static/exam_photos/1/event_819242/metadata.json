@@ -1,0 +1,23 @@
+{
+    "event_id": "EVENT_819242",
+    "usn": "UNKNOWN",
+    "student_name": "Unknown",
+    "track_id": "TRACK_02",
+    "event_type": "MULTIPLE_PERSON_EVENT",
+    "timestamp": "2026-10-05 20:03:39",
+    "duration_seconds": 3.0,
+    "event_confidence": 0.0,
+    "identity_source": "UNKNOWN",
+    "face_verified": false,
+    "video_evidence": "exam_photos/1/event_819242/evidence.mp4",
+    "image_evidence": [
+        "before.jpg",
+        "event_start.jpg",
+        "best_event.jpg",
+        "event_end.jpg",
+        "after.jpg"
+    ],
+    "status": "REVIEW_REQUIRED",
+    "detail": "Multiple people detected occupying one seat area (Track #1 and Track #2) for 3.5s.",
+    "seat_no": ""
+}

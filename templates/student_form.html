@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if student else 'Add' }} Student{% endblock %}
+{% block content %}
+<h1>{{ 'Edit' if student else 'Add' }} Student</h1>
+
+<div class="panel">
+<form method="POST">
+    <label>Roll Number</label>
+    <input type="text" name="roll_no" value="{{ student.roll_no if student else '' }}" required>
+
+    <label>Full Name</label>
+    <input type="text" name="name" value="{{ student.name if student else '' }}" required>
+
+    <label>Class</label>
+    <select name="class_id" required>
+        <option value="">-- Select Class --</option>
+        {% for c in classes %}
+        <option value="{{ c.id }}"
+            {% if student and student.class_id == c.id %}selected{% endif %}>
+            {{ c.name }}
+        </option>
+        {% endfor %}
+    </select>
+
+    <label>Email (optional)</label>
+    <input type="email" name="email" value="{{ student.email if student else '' }}">
+
+    <label>Phone (optional)</label>
+    <input type="text" name="phone" value="{{ student.phone if student else '' }}">
+
+    {% if student %}
+    <label>Status</label>
+    <select name="status">
+        <option value="active" {% if student.status == 'active' %}selected{% endif %}>Active</option>
+        <option value="graduated" {% if student.status == 'graduated' %}selected{% endif %}>Graduated</option>
+        <option value="inactive" {% if student.status == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    <p class="muted" style="margin-top:-6px;">
+        Marking a student Graduated or Inactive starts the retention clock —
+        their face photos are auto-deleted after the grace period
+        (Settings → Data Expiry). Attendance and other records are never
+        affected by this.
+    </p>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary">{{ 'Update' if student else 'Add' }} Student</button>
+    <a href="{{ url_for('students') }}" class="btn btn-secondary">Cancel</a>
+</form>
+</div>
+{% endblock %}

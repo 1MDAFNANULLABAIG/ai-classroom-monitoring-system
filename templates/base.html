@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Student Attendance System{% endblock %}</title>
+<script>
+    // Applied before first paint so switching pages (or a dark-mode OS)
+    // never flashes the wrong theme. Values: "light" | "dark"; absent
+    // means "follow the OS setting", handled by the CSS media query.
+    (function () {
+        var saved = localStorage.getItem('theme');
+        if (saved === 'light' || saved === 'dark') {
+            document.documentElement.setAttribute('data-theme', saved);
+        }
+    })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="{{ 'has-sidebar' if session.user_id else 'no-sidebar' }}">
+
+<div class="app-shell">
+    {% if session.user_id %}
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-text">Attendance<b>Hub</b></span>
+        </div>
+
+        <nav class="sidebar-nav">
+            <p class="nav-label">Main Menu</p>
+            <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">
+                <i class="fa-solid fa-grip"></i><span>Dashboard</span>
+            </a>
+            <a href="{{ url_for('reports') }}" class="{{ 'active' if request.endpoint == 'reports' }}">
+                <i class="fa-solid fa-chart-line"></i><span>Analytics</span>
+            </a>
+            <a href="{{ url_for('timetable') }}" class="{{ 'active' if request.endpoint == 'timetable' }}">
+                <i class="fa-regular fa-calendar-days"></i><span>Timetable</span>
+            </a>
+
+            <p class="nav-label">People</p>
+            <a href="{{ url_for('students') }}" class="{{ 'active' if request.endpoint in ['students','add_student','edit_student'] }}">
+                <i class="fa-solid fa-user-graduate"></i><span>Students</span>
+            </a>
+            <a href="{{ url_for('teachers') }}" class="{{ 'active' if request.endpoint in ['teachers','add_teacher','edit_teacher'] }}">
+                <i class="fa-solid fa-chalkboard-user"></i><span>Teachers</span>
+            </a>
+            <a href="{{ url_for('classes') }}" class="{{ 'active' if request.endpoint == 'classes' }}">
+                <i class="fa-solid fa-people-roof"></i><span>Classes</span>
+            </a>
+
+            <p class="nav-label">Attendance</p>
+            <a href="{{ url_for('attendance') }}" class="{{ 'active' if request.endpoint == 'attendance' }}">
+                <i class="fa-solid fa-clipboard-check"></i><span>Mark Attendance</span>
+            </a>
+            <a href="{{ url_for('live_attendance') }}" class="{{ 'active' if request.endpoint == 'live_attendance' }}">
+                <i class="fa-solid fa-video"></i><span>Live Camera</span>
+            </a>
+            <a href="{{ url_for('smart_attendance') }}" class="{{ 'active' if request.endpoint == 'smart_attendance' }}">
+                <i class="fa-solid fa-wand-magic-sparkles"></i><span>Smart Attendance</span>
+            </a>
+            <a href="{{ url_for('face_setup') }}" class="{{ 'active' if request.endpoint == 'face_setup' }}">
+                <i class="fa-solid fa-face-smile"></i><span>Face Setup</span>
+            </a>
+            <a href="{{ url_for('sessions_list') }}" class="{{ 'active' if request.endpoint in ['sessions_list','session_detail'] }}">
+                <i class="fa-solid fa-layer-group"></i><span>Sessions</span>
+            </a>
+
+            <p class="nav-label">AI Features</p>
+            <a href="{{ url_for('exam_rooms') }}" class="{{ 'active' if request.endpoint in ['exam_rooms','exam_room_form'] }}">
+                <i class="fa-solid fa-door-open"></i><span>Exam Rooms</span>
+            </a>
+            <a href="{{ url_for('exam_sessions_list') }}" class="{{ 'active' if request.endpoint in ['exam_sessions_list','exam_session_new','exam_session_allocate','exam_session_monitor','exam_session_detail'] }}">
+                <i class="fa-solid fa-user-shield"></i><span>Exam Hall Monitor</span>
+            </a>
+            <a href="{{ url_for('activeness_monitor') }}" class="{{ 'active' if request.endpoint == 'activeness_monitor' }}">
+                <i class="fa-solid fa-eye"></i><span>Class Activeness</span>
+            </a>
+            <a href="{{ url_for('activeness_sessions_list') }}" class="{{ 'active' if request.endpoint in ['activeness_sessions_list','activeness_session_detail'] }}">
+                <i class="fa-solid fa-clipboard-list"></i><span>Activeness Log</span>
+            </a>
+            <a href="{{ url_for('behavior_dashboard') }}" class="{{ 'active' if request.endpoint in ['behavior_dashboard','behavior_student_detail'] }}">
+                <i class="fa-solid fa-brain"></i><span>Behavior Prediction</span>
+            </a>
+            <a href="{{ url_for('data_retention') }}" class="{{ 'active' if request.endpoint == 'data_retention' }}">
+                <i class="fa-solid fa-clock-rotate-left"></i><span>Data Expiry</span>
+            </a>
+
+            <p class="nav-label">Settings</p>
+            <a href="{{ url_for('change_password') }}" class="{{ 'active' if request.endpoint == 'change_password' }}">
+                <i class="fa-solid fa-key"></i><span>Change Password</span>
+            </a>
+            <a href="{{ url_for('logout') }}">
+                <i class="fa-solid fa-right-from-bracket"></i><span>Logout</span>
+            </a>
+        </nav>
+    </aside>
+    {% endif %}
+
+    <div class="main-wrap">
+        {% if session.user_id %}
+        <header class="topbar">
+            <div class="topbar-search">
+                <span>Welcome back</span>
+            </div>
+            <div class="topbar-user">
+                <button type="button" class="theme-toggle" id="theme-toggle-btn" onclick="toggleTheme()" aria-label="Toggle dark mode">
+                    <i class="fa-solid fa-moon" id="theme-toggle-icon"></i><span id="theme-toggle-label">Dark</span>
+                </button>
+                <span class="user-hello">Hi, <strong>{{ session.username }}</strong></span>
+                <span class="user-avatar">{{ session.username[0]|upper }}</span>
+            </div>
+        </header>
+        {% endif %}
+
+        <main class="container">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="flash flash-{{ category }}"><i class="fa-solid fa-circle-info"></i> {{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+
+        {% if session.user_id %}
+        <footer>
+            <p>Student Attendance Management System</p>
+        </footer>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    function currentTheme() {
+        var saved = localStorage.getItem('theme');
+        if (saved === 'light' || saved === 'dark') return saved;
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function paintToggle() {
+        var btn = document.getElementById('theme-toggle-icon');
+        var label = document.getElementById('theme-toggle-label');
+        if (!btn) return;
+        var isDark = currentTheme() === 'dark';
+        btn.className = isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+        label.textContent = isDark ? 'Light' : 'Dark';
+    }
+    function toggleTheme() {
+        var next = currentTheme() === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('theme', next);
+        document.documentElement.setAttribute('data-theme', next);
+        paintToggle();
+    }
+    paintToggle();
+
+    // Give every data table a sticky header + scrollable body, without
+    // having to edit each template individually -- same "dense table"
+    // treatment as the dashboard this look was modeled on.
+    document.querySelectorAll('table.table').forEach(function (t) {
+        if (t.parentElement.classList.contains('table-wrap')) return;
+        var wrap = document.createElement('div');
+        wrap.className = 'table-wrap';
+        t.parentNode.insertBefore(wrap, t);
+        wrap.appendChild(t);
+    });
+
+    // Subtle hover lift for cards and panels -- a restrained nod to
+    // depth (a slight rise + soft shadow), not a full tilt. Skipped
+    // for anyone who has asked for reduced motion.
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.querySelectorAll('.card, .panel').forEach(function (el) {
+            el.addEventListener('mouseenter', function () {
+                el.style.transform = 'translateY(-2px)';
+            });
+            el.addEventListener('mouseleave', function () {
+                el.style.transform = '';
+            });
+        });
+    }
+</script>
+
+</body>
+</html>

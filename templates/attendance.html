@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Mark Attendance{% endblock %}
+{% block content %}
+<h1>Mark Attendance</h1>
+
+<form method="GET" class="inline-form">
+    <select name="class_id" onchange="this.form.submit()">
+        {% for c in classes %}
+        <option value="{{ c.id }}" {% if selected_class == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    <input type="date" name="att_date" value="{{ att_date }}" onchange="this.form.submit()">
+</form>
+
+{% if roster %}
+<form method="POST">
+    <input type="hidden" name="class_id" value="{{ selected_class }}">
+    <input type="hidden" name="att_date" value="{{ att_date }}">
+
+    <table class="table">
+        <thead>
+            <tr><th>Roll No</th><th>Name</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% for s in roster %}
+            <tr>
+                <td>{{ s.roll_no }}</td>
+                <td>{{ s.name }}</td>
+                <td>
+                    <input type="hidden" name="student_id" value="{{ s.id }}">
+                    <label class="radio-inline">
+                        <input type="radio" name="status_{{ s.id }}" value="Present" {% if s.status == 'Present' %}checked{% endif %}> Present
+                    </label>
+                    <label class="radio-inline">
+                        <input type="radio" name="status_{{ s.id }}" value="Absent" {% if s.status == 'Absent' %}checked{% endif %}> Absent
+                    </label>
+                    <label class="radio-inline">
+                        <input type="radio" name="status_{{ s.id }}" value="Late" {% if s.status == 'Late' %}checked{% endif %}> Late
+                    </label>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <button type="submit" class="btn btn-primary">Save Attendance</button>
+</form>
+{% else %}
+<p class="muted">No students in this class yet. <a href="{{ url_for('add_student') }}">Add a student</a>.</p>
+{% endif %}
+{% endblock %}

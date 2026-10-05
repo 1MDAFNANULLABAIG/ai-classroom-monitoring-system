@@ -1,0 +1,429 @@
+{% extends "base.html" %}
+{% block title %}Exam Hall Monitor{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+    <div>
+        <h1>🛡️ {{ sess.exam_name }} — {{ sess.room_name }}</h1>
+        <p class="muted" style="margin-top:-4px;">
+            Real-Time Multi-Modal Malpractice Monitoring: Face recognition, pose estimation, head direction, object detection, seat tracking & 10s video proof.
+        </p>
+    </div>
+    <div>
+        <a href="{{ url_for('exam_session_allocate', session_id=sess.id) }}" class="btn btn-secondary btn-sm">Manage Seats ({{ seat_count }})</a>
+        <a href="{{ url_for('exam_sessions_list') }}" class="btn btn-secondary btn-sm">← Back</a>
+    </div>
+</div>
+
+<!-- Real-time Telemetry Bar -->
+<div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+    <div class="panel" style="flex:1; min-width:130px; text-align:center; padding:10px;">
+        <div style="font-size:0.75rem; font-weight:700; color:#64748b; text-transform:uppercase;">Detected</div>
+        <div id="tele-detected" style="font-size:1.6rem; font-weight:800; color:#1e293b;">0</div>
+    </div>
+    <div class="panel" style="flex:1; min-width:130px; text-align:center; padding:10px;">
+        <div style="font-size:0.75rem; font-weight:700; color:#16a34a; text-transform:uppercase;">Verified</div>
+        <div id="tele-verified" style="font-size:1.6rem; font-weight:800; color:#16a34a;">0</div>
+    </div>
+    <div class="panel" style="flex:1; min-width:130px; text-align:center; padding:10px;">
+        <div style="font-size:0.75rem; font-weight:700; color:#ca8a04; text-transform:uppercase;">Under Review</div>
+        <div id="tele-review" style="font-size:1.6rem; font-weight:800; color:#ca8a04;">0</div>
+    </div>
+    <div class="panel" style="flex:1; min-width:130px; text-align:center; padding:10px;">
+        <div style="font-size:0.75rem; font-weight:700; color:#dc2626; text-transform:uppercase;">Unknown</div>
+        <div id="tele-unknown" style="font-size:1.6rem; font-weight:800; color:#dc2626;">0</div>
+    </div>
+</div>
+
+<!-- Real-Time Malpractice Alert Panel (Item 9) -->
+<div class="panel" id="realtime-alert-card" style="background:#fff; border:2px solid #ef4444; border-radius:8px; padding:16px; margin-bottom:16px; display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #fee2e2; padding-bottom:8px; margin-bottom:10px;">
+        <h3 style="color:#b91c1c; margin:0; font-size:1.05rem; display:flex; align-items:center; gap:6px;">
+            🚨 EXAM MALPRACTICE MONITOR — ALERT
+        </h3>
+        <span class="badge badge-absent" id="rt-status">REVIEW REQUIRED</span>
+    </div>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; font-size:0.88rem;">
+        <div><strong>TIME:</strong> <span id="rt-time">--</span></div>
+        <div><strong>USN:</strong> <span id="rt-usn" style="font-weight:700; color:#1d4ed8;">--</span></div>
+        <div><strong>STUDENT:</strong> <span id="rt-student">--</span></div>
+        <div><strong>EVENT:</strong> <span id="rt-event" style="font-weight:700; color:#b91c1c;">--</span></div>
+        <div><strong>CONFIDENCE:</strong> <span id="rt-confidence">--</span></div>
+        <div><strong>DURATION:</strong> <span id="rt-duration">--</span></div>
+        <div><strong>IDENTITY:</strong> <span id="rt-identity" style="font-weight:700;">--</span></div>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+        <button id="rt-btn-photos" class="btn btn-secondary btn-sm" onclick="openEvidenceModal(currentAlertId)">[VIEW PHOTOS]</button>
+        <button id="rt-btn-video" class="btn btn-primary btn-sm" onclick="openEvidenceModal(currentAlertId)">[WATCH 10 SEC VIDEO]</button>
+    </div>
+</div>
+
+<div style="display:flex; gap:24px; flex-wrap:wrap;">
+    <div class="panel" style="flex:1.4; min-width:360px;">
+        <div style="position:relative; width:100%; max-width:640px; background:#000; border-radius:8px; overflow:hidden;">
+            <video id="video" width="640" height="480" autoplay muted playsinline style="width:100%; height:auto; display:block;"></video>
+            <canvas id="overlay" width="640" height="480" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+            <canvas id="capture-canvas" width="640" height="480" style="display:none;"></canvas>
+        </div>
+
+        <div style="margin-top:12px; display:flex; gap:8px; align-items:center;">
+            <button id="start-btn" class="btn btn-primary">Start Monitoring</button>
+            <button id="stop-btn" class="btn btn-secondary" disabled>Stop Monitoring</button>
+            <span id="status-text" class="muted" style="margin-left:8px; font-size:0.9rem;">Ready.</span>
+        </div>
+    </div>
+
+    <div class="panel" style="flex:1; min-width:320px;">
+        <h3>Live Suspicious Events Feed</h3>
+        <div id="alert-feed" class="alert-feed" style="max-height:480px; overflow-y:auto;">
+            <p class="muted">No alerts yet.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Event History Table (Item 10) -->
+<div class="panel" style="margin-top:24px;">
+    <h3>📋 Event History</h3>
+    <table class="table" id="event-history-table">
+        <thead>
+            <tr>
+                <th>TIME</th>
+                <th>USN</th>
+                <th>STUDENT</th>
+                <th>EVENT</th>
+                <th>CONFIDENCE</th>
+                <th>DURATION</th>
+                <th>STATUS</th>
+                <th>IDENTITY</th>
+                <th>EVIDENCE</th>
+            </tr>
+        </thead>
+        <tbody id="event-history-tbody">
+            <tr><td colspan="9" class="muted">No events recorded yet.</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Evidence Review Modal (Item 6, 7, 8) -->
+<div id="evidence-modal" style="display:none; position:fixed; z-index:9999; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.65); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; width:92%; max-width:800px; max-height:92vh; overflow-y:auto; padding:24px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3); position:relative;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:12px; margin-bottom:16px;">
+            <h3 id="modal-title" style="margin:0;">Evidence Package</h3>
+            <button onclick="closeModal()" class="btn btn-secondary" style="padding:4px 10px;">&times; Close</button>
+        </div>
+        <div id="modal-content">
+            <p class="muted">Loading evidence...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+const sessionId = {{ sess.id }};
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const captureCanvas = document.getElementById('capture-canvas');
+const captureCtx = captureCanvas.getContext('2d');
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const statusText = document.getElementById('status-text');
+const alertFeed = document.getElementById('alert-feed');
+const eventHistoryTbody = document.getElementById('event-history-tbody');
+
+const teleDetected = document.getElementById('tele-detected');
+const teleVerified = document.getElementById('tele-verified');
+const teleReview = document.getElementById('tele-review');
+const teleUnknown = document.getElementById('tele-unknown');
+
+const rtCard = document.getElementById('realtime-alert-card');
+const rtTime = document.getElementById('rt-time');
+const rtUsn = document.getElementById('rt-usn');
+const rtStudent = document.getElementById('rt-student');
+const rtEvent = document.getElementById('rt-event');
+const rtConfidence = document.getElementById('rt-confidence');
+const rtDuration = document.getElementById('rt-duration');
+const rtIdentity = document.getElementById('rt-identity');
+const rtStatus = document.getElementById('rt-status');
+
+let stream = null;
+let workTimer = null;
+let monitoring = false;
+let allAlerts = [];
+let currentAlertId = null;
+
+// 10-Second Rolling Video Buffer
+let recorder = null;
+let clipChunks = [];
+const CLIP_BUFFER_CHUNKS = 12;
+
+function startClipRecorder() {
+    if (!stream || !window.MediaRecorder) return;
+    clipChunks = [];
+    try {
+        recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+    } catch (err) {
+        try { recorder = new MediaRecorder(stream); } catch (e) { recorder = null; return; }
+    }
+    recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+            clipChunks.push(e.data);
+            if (clipChunks.length > CLIP_BUFFER_CHUNKS) clipChunks.shift();
+        }
+    };
+    recorder.start(1000);
+}
+
+function stopClipRecorder() {
+    if (recorder && recorder.state !== 'inactive') {
+        try { recorder.stop(); } catch (err) {}
+    }
+    recorder = null;
+    clipChunks = [];
+}
+
+function uploadClipForAlert(alertId) {
+    if (!clipChunks.length) return;
+    const blob = new Blob(clipChunks.slice(), { type: 'video/webm' });
+    const form = new FormData();
+    form.append('session_id', sessionId);
+    form.append('alert_id', alertId);
+    form.append('video', blob, `alert_${alertId}.webm`);
+    fetch('/exam/monitor/alert_video', { method: 'POST', body: form }).catch(() => {});
+}
+
+function renderAlerts() {
+    if (!allAlerts.length) {
+        alertFeed.innerHTML = '<p class="muted">No alerts yet.</p>';
+        eventHistoryTbody.innerHTML = '<tr><td colspan="9" class="muted">No events recorded yet.</td></tr>';
+        return;
+    }
+    alertFeed.innerHTML = allAlerts.slice(0, 30).map(a => `
+        <div class="alert-item severity-${a.severity}" style="cursor:pointer;" onclick="openEvidenceModal(${a.event_id || a.alert_id})">
+            ${a.photo_path ? `<img src="/static/${a.photo_path}" alt="evidence" style="width:60px;height:60px;object-fit:cover;border-radius:6px;margin-right:10px;">` : ''}
+            <div style="flex:1;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong>${(a.type || a.alert_type || '').replace(/_/g,' ').toUpperCase()}</strong>
+                    <span class="badge ${a.severity === 'high' ? 'badge-absent' : (a.severity === 'medium' ? 'badge-late' : 'badge-present')}">${(a.severity||'low').toUpperCase()}</span>
+                </div>
+                <div style="font-size:0.88rem; margin:2px 0;">
+                    ${a.usn && a.usn !== 'UNKNOWN' ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700;">USN ${a.usn}</span>` : '<span class="badge badge-absent">Unknown</span>'}
+                    ${a.seat_no ? `<span class="muted"> · Seat ${a.seat_no}</span>` : ''}
+                </div>
+                <div style="font-size:0.82rem; color:#475569;">${a.detail || ''}</div>
+                <div style="margin-top:4px;">
+                    <span style="font-size:0.75rem; color:#2563eb; font-weight:600;">🔍 View Multi-Photo & Video Proof</span>
+                </div>
+            </div>
+            <div class="alert-time">${a.created_at ? (a.created_at.split('T')[1] || a.created_at.split(' ')[1] || a.created_at) : ''}</div>
+        </div>
+    `).join('');
+
+    // Update History Table (Item 10)
+    eventHistoryTbody.innerHTML = allAlerts.slice(0, 50).map(a => {
+        const timeStr = a.created_at ? (a.created_at.split('T')[1] || a.created_at.split(' ')[1] || a.created_at) : '--';
+        const usnStr = a.usn || 'UNKNOWN';
+        const nameStr = a.student_name || 'Unassigned';
+        const eventStr = (a.type || a.alert_type || '').replace(/_/g,' ').toUpperCase();
+        const confStr = a.confidence ? `${Math.round(a.confidence > 1.0 ? a.confidence : a.confidence * 100)}%` : '--';
+        const durStr = a.duration_seconds ? `${parseFloat(a.duration_seconds).toFixed(1)}s` : '3.0s';
+        const statusStr = a.status || 'REVIEW_REQUIRED';
+        const idSource = a.identity_source || (a.face_verified ? 'FACE_VERIFIED' : 'TRACK_ASSOCIATED');
+        const aid = a.event_id || a.alert_id;
+
+        return `
+            <tr>
+                <td>${timeStr}</td>
+                <td><strong>${usnStr}</strong></td>
+                <td>${nameStr}</td>
+                <td><span class="badge ${a.severity === 'high' ? 'badge-absent' : 'badge-late'}">${eventStr}</span></td>
+                <td>${confStr}</td>
+                <td>${durStr}</td>
+                <td><span class="badge badge-absent">${statusStr}</span></td>
+                <td><small style="font-weight:600; color:#475569;">${idSource}</small></td>
+                <td><button class="btn btn-secondary btn-sm" onclick="openEvidenceModal(${aid})">View</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function handleAlerts(alerts) {
+    (alerts || []).forEach(a => {
+        allAlerts.unshift(a);
+        currentAlertId = a.event_id || a.alert_id;
+
+        // Show Real-time Alert Card (Item 9)
+        rtCard.style.display = 'block';
+        rtTime.textContent = a.created_at ? (a.created_at.split('T')[1] || a.created_at.split(' ')[1] || a.created_at) : '--';
+        rtUsn.textContent = a.usn || 'UNKNOWN';
+        rtStudent.textContent = a.student_name || 'Unassigned';
+        rtEvent.textContent = (a.type || a.alert_type || '').replace(/_/g, ' ').toUpperCase();
+        rtConfidence.textContent = a.confidence ? `${Math.round(a.confidence > 1.0 ? a.confidence : a.confidence * 100)}%` : '85%';
+        rtDuration.textContent = a.duration_seconds ? `${parseFloat(a.duration_seconds).toFixed(1)}s` : '3.0s';
+        rtIdentity.textContent = a.identity_source || (a.face_verified ? 'FACE-VERIFIED' : 'TRACK-ASSOCIATED');
+        rtStatus.textContent = a.status || 'REVIEW REQUIRED';
+
+        if (a.needs_video_clip && currentAlertId) {
+            setTimeout(() => uploadClipForAlert(currentAlertId), 3000);
+        }
+    });
+    renderAlerts();
+}
+
+function drawBoxes(boxes) {
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    (boxes || []).forEach(b => {
+        overlayCtx.strokeStyle = b.color || '#ef4444';
+        overlayCtx.lineWidth = 3;
+        overlayCtx.strokeRect(b.x, b.y, b.w, b.h);
+
+        if (b.label) {
+            overlayCtx.fillStyle = b.color || '#ef4444';
+            const tw = overlayCtx.measureText(b.label).width + 12;
+            overlayCtx.fillRect(b.x, b.y - 20, tw, 20);
+            overlayCtx.fillStyle = '#fff';
+            overlayCtx.font = 'bold 12px sans-serif';
+            overlayCtx.fillText(b.label, b.x + 6, b.y - 5);
+        }
+    });
+}
+
+function updateTelemetry(tele) {
+    if (!tele) return;
+    if (teleDetected) teleDetected.textContent = tele.detected_count || 0;
+    if (teleVerified) teleVerified.textContent = tele.verified_count || 0;
+    if (teleReview) teleReview.textContent = tele.review_count || 0;
+    if (teleUnknown) teleUnknown.textContent = tele.unknown_count || 0;
+}
+
+async function startCamera() {
+    try {
+        const resp = await fetch('/exam/monitor/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            statusText.textContent = data.message || 'Could not start monitoring.';
+            return;
+        }
+        allAlerts = [];
+        renderAlerts();
+
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+        video.srcObject = stream;
+        monitoring = true;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusText.textContent = `Monitoring running (${data.roster_size} allocated students).`;
+        startClipRecorder();
+        workTimer = setInterval(tick, 1200);
+    } catch (err) {
+        statusText.textContent = 'Could not access camera: ' + err.message;
+    }
+}
+
+function stopCamera() {
+    clearInterval(workTimer);
+    stopClipRecorder();
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    statusText.textContent = 'Monitoring stopped.';
+
+    if (monitoring) {
+        fetch('/exam/monitor/end', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        }).catch(() => {});
+    }
+    monitoring = false;
+}
+
+function tick() {
+    if (!monitoring) return;
+    captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.85);
+
+    fetch('/exam/monitor/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, image: dataUrl })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) return;
+        drawBoxes(data.boxes || []);
+        if (data.telemetry) updateTelemetry(data.telemetry);
+        if (data.alerts && data.alerts.length) {
+            handleAlerts(data.alerts);
+        }
+    })
+    .catch(() => { statusText.textContent = 'Network communication during analysis.'; });
+}
+
+function openEvidenceModal(alertId) {
+    if (!alertId) return;
+    const modal = document.getElementById('evidence-modal');
+    const content = document.getElementById('modal-content');
+    modal.style.display = 'flex';
+    content.innerHTML = '<p class="muted">Loading multi-photo & video evidence package...</p>';
+
+    fetch(`/api/exam/event/${alertId}`)
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            content.innerHTML = '<p class="muted">Event details unavailable.</p>';
+            return;
+        }
+        const ev = data.event;
+        const photos = ev.photos || {};
+
+        let photoGridHtml = '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px;">';
+        for (const [key, path] of Object.entries(photos)) {
+            const label = key.replace(/_/g, ' ').toUpperCase();
+            photoGridHtml += `
+                <div style="text-align:center;">
+                    <div style="font-size:0.75rem; font-weight:700; margin-bottom:4px; color:#475569;">${label}</div>
+                    <img src="/static/${path}" style="width:100%; height:120px; object-fit:cover; border-radius:6px; border:1px solid #cbd5e1;">
+                </div>
+            `;
+        }
+        photoGridHtml += '</div>';
+
+        content.innerHTML = `
+            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px;">
+                <div>
+                    <h4 style="margin:0; color:#1e293b;">${(ev.alert_type||'').replace(/_/g,' ').toUpperCase()}</h4>
+                    <p class="muted" style="margin:2px 0;">Student: <strong>${ev.student_name || 'Unverified'} (${ev.usn || 'Unknown'})</strong> · Seat: ${ev.seat_no || 'N/A'}</p>
+                </div>
+                <div>
+                    <span class="badge ${ev.severity === 'high' ? 'badge-absent' : 'badge-late'}">${(ev.severity||'').toUpperCase()}</span>
+                    <span class="muted" style="font-size:0.85rem; margin-left:8px;">${ev.created_at}</span>
+                </div>
+            </div>
+            <p style="background:#f8fafc; border-left:4px solid #3b82f6; padding:8px 12px; margin:8px 0; font-size:0.9rem;">${ev.detail || 'Visual evidence captured.'}</p>
+
+            <h5 style="margin:16px 0 8px 0;">📸 Multi-Photo Evidence Package</h5>
+            ${photoGridHtml}
+
+            <h5 style="margin:16px 0 8px 0;">🎥 10-Second Video Proof</h5>
+            ${ev.video_path ? `
+                <video controls autoplay src="/static/${ev.video_path}" style="width:100%; max-width:540px; border-radius:8px; background:#000; display:block; margin:0 auto;"></video>
+            ` : '<p class="muted" style="font-size:0.85rem;">(10s buffered video clip uploading or processing...)</p>'}
+        `;
+    })
+    .catch(() => {
+        content.innerHTML = '<p class="muted">Failed to load evidence package.</p>';
+    });
+}
+
+function closeModal() {
+    document.getElementById('evidence-modal').style.display = 'none';
+}
+
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click', stopCamera);
+</script>
+{% endblock %}

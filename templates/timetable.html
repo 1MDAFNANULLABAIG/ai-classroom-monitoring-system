@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Timetable{% endblock %}
+{% block content %}
+<h1>Timetable</h1>
+
+<form method="GET" class="inline-form">
+    <select name="class_id" onchange="this.form.submit()">
+        {% for c in classes %}
+        <option value="{{ c.id }}" {% if selected_class == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+</form>
+
+{% if not classes %}
+<p class="muted">Add a class first.</p>
+{% else %}
+
+<div class="panel">
+    <h3>Quick Setup</h3>
+    <p class="muted">
+        Auto-generate a standard day (08:20–16:00, ~50-minute periods,
+        tea break 10:20–10:40, lunch break 12:40–13:20). This replaces any existing
+        timetable for this class — you can then fill in subject &amp; teacher per period below.
+    </p>
+    <form method="POST" action="{{ url_for('timetable_generate') }}"
+          onsubmit="return confirm('This replaces the current timetable for this class. Continue?');">
+        <input type="hidden" name="class_id" value="{{ selected_class }}">
+        <button type="submit" class="btn btn-primary">Generate Default Day</button>
+    </form>
+</div>
+
+<table class="table">
+    <thead>
+        <tr><th>Period</th><th>Time</th><th>Type</th><th>Subject</th><th>Teacher</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for p in periods %}
+        <tr>
+            <td>{{ p.period_number }}</td>
+            <td>{{ p.start_time }} – {{ p.end_time }}</td>
+            <td>{% if p.period_type == 'break' %}<span class="badge badge-late">Break</span>{% else %}<span class="badge badge-present">Class</span>{% endif %}</td>
+            {% if p.period_type == 'break' %}
+                <td colspan="2" class="muted">{{ p.subject or 'Break' }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('timetable_delete', period_id=p.id) }}"
+                          onsubmit="return confirm('Remove this period?');" style="display:inline">
+                        <input type="hidden" name="class_id" value="{{ selected_class }}">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </td>
+            {% else %}
+                <td>
+                    <form method="POST" action="{{ url_for('timetable_update', period_id=p.id) }}" id="form-{{ p.id }}">
+                        <input type="hidden" name="class_id" value="{{ selected_class }}">
+                        <input type="text" name="subject" value="{{ p.subject or '' }}" placeholder="e.g. DBMS" style="width:100%;" form="form-{{ p.id }}">
+                    </form>
+                </td>
+                <td>
+                    <select name="teacher_id" style="width:100%;" form="form-{{ p.id }}">
+                        <option value="">-- unassigned --</option>
+                        {% for t in teachers %}
+                        <option value="{{ t.id }}" {% if p.teacher_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td>
+                    <button type="submit" class="btn btn-secondary btn-sm" form="form-{{ p.id }}">Save</button>
+                    <form method="POST" action="{{ url_for('timetable_delete', period_id=p.id) }}"
+                          onsubmit="return confirm('Remove this period?');" style="display:inline">
+                        <input type="hidden" name="class_id" value="{{ selected_class }}">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </td>
+            {% endif %}
+        </tr>
+    {% else %}
+        <tr><td colspan="6" class="muted">No timetable yet — use Quick Setup above, or add a period manually below.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<div class="panel">
+    <h3>Add a Period Manually</h3>
+    <form method="POST" action="{{ url_for('timetable_add') }}">
+        <input type="hidden" name="class_id" value="{{ selected_class }}">
+        <label>Period Number</label>
+        <input type="number" name="period_number" value="{{ periods|length + 1 }}" min="1" style="max-width:120px;">
+
+        <label>Type</label>
+        <select name="period_type">
+            <option value="class">Class Period</option>
+            <option value="break">Break</option>
+        </select>
+
+        <label>Subject / Label</label>
+        <input type="text" name="subject" placeholder="e.g. DBMS or Tea Break">
+
+        <label>Teacher (leave blank for breaks)</label>
+        <select name="teacher_id">
+            <option value="">-- none --</option>
+            {% for t in teachers %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endfor %}
+        </select>
+
+        <label>Start Time</label>
+        <input type="time" name="start_time" required>
+
+        <label>End Time</label>
+        <input type="time" name="end_time" required>
+
+        <button type="submit" class="btn btn-primary" style="margin-top:16px;">Add Period</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

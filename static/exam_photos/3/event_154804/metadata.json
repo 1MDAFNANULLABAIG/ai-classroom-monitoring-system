@@ -1,0 +1,23 @@
+{
+    "event_id": "EVENT_154804",
+    "usn": "12",
+    "student_name": "f",
+    "track_id": "TRACK_01",
+    "event_type": "POSSIBLE_SEAT_CHANGE",
+    "timestamp": "2026-09-20 00:59:14",
+    "duration_seconds": 8.4,
+    "event_confidence": 0.79,
+    "identity_source": "FACE_VERIFIED",
+    "face_verified": true,
+    "video_evidence": "exam_photos/3/event_154804/evidence.mp4",
+    "image_evidence": [
+        "before.jpg",
+        "event_start.jpg",
+        "best_event.jpg",
+        "event_end.jpg",
+        "after.jpg"
+    ],
+    "status": "REVIEW_REQUIRED",
+    "detail": "Track #1 (12) changed seat and remained in new location for 8.4s.",
+    "seat_no": "1"
+}

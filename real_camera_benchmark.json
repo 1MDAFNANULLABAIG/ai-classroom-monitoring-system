@@ -1,0 +1,22 @@
+{
+  "frame_count": 50,
+  "fps": {
+    "camera_fps": 16516.3,
+    "detection_fps": 8.1,
+    "tracking_fps": 10.3,
+    "recognition_fps": 42.1,
+    "pose_fps": 29.6,
+    "end_to_end_fps": 1.9
+  },
+  "latency_ms": {
+    "camera_ms": 0.06,
+    "detection_ms": 123.99,
+    "tracking_ms": 96.72,
+    "recognition_ms": 23.73,
+    "pose_ms": 33.73,
+    "fusion_ms": 240.3,
+    "end_to_end_ms": 518.7
+  },
+  "benchmark_duration_sec": 25.93,
+  "tested_resolution": "640x480"
+}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Data Expiry{% endblock %}
+{% block content %}
+<h1>🗑️ Automatic Data Expiry</h1>
+<p class="muted">
+    Privacy & storage optimization: face photos (not attendance or academic
+    records) are deleted once a student is marked Graduated/Inactive and
+    {{ graduated_grace_days }} days have passed, or automatically after
+    {{ inactivity_days }} days with no attendance activity at all — whichever
+    comes first. This runs automatically in the background whenever the
+    Dashboard is viewed; you can also review and trigger it here.
+</p>
+
+<div class="flash flash-warning">
+    <strong>Scope:</strong> this only ever deletes enrolled face photos
+    (<code>face_data/dataset/&lt;id&gt;/</code>). Attendance history, discipline
+    records, and the student's profile are never touched. After a bulk
+    deletion, re-train the recognition model from Face Setup so it stops
+    trying to match the removed photos.
+</div>
+
+<div class="panel" style="margin-top:16px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <h3 style="margin:0;">Currently Due ({{ due|length }})</h3>
+        <form method="POST" action="{{ url_for('data_retention_run') }}">
+            <button type="submit" class="btn btn-primary" {% if not due %}disabled{% endif %}>Run Cleanup Now</button>
+        </form>
+    </div>
+
+    <table class="table" style="margin-top:12px;">
+        <thead>
+            <tr><th>Roll No</th><th>Name</th><th>Class</th><th>Status</th><th>Reason</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for c in due %}
+            <tr>
+                <td>{{ c.roll_no }}</td>
+                <td>{{ c.name }}</td>
+                <td>{{ c.class_name }}</td>
+                <td>
+                    {% if c.status == 'graduated' %}
+                        <span class="badge badge-severity-medium">Graduated</span>
+                    {% elif c.status == 'inactive' %}
+                        <span class="badge badge-severity-low">Inactive</span>
+                    {% else %}
+                        <span class="badge badge-present">Active</span>
+                    {% endif %}
+                </td>
+                <td class="muted">{{ c.detail }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('data_retention_purge_one', student_id=c.student_id) }}"
+                          onsubmit="return confirm('Delete face photos for {{ c.name }}? This cannot be undone.');">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete Now</button>
+                    </form>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="6" class="muted">Nothing is currently due for deletion.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="panel" style="margin-top:24px;">
+    <h3>Deletion Log</h3>
+    <table class="table">
+        <thead>
+            <tr><th>Deleted</th><th>Roll No</th><th>Name</th><th>Class</th><th>Reason</th><th>Photos Removed</th><th>Triggered By</th></tr>
+        </thead>
+        <tbody>
+        {% for l in recent_log %}
+            <tr>
+                <td>{{ l.deleted_at }}</td>
+                <td>{{ l.roll_no }}</td>
+                <td>{{ l.name }}</td>
+                <td>{{ l.class_name or '-' }}</td>
+                <td class="muted">{{ l.detail or l.reason }}</td>
+                <td>{{ l.photos_removed }}</td>
+                <td>
+                    <span class="badge {{ 'badge-severity-low' if l.triggered_by == 'automatic' else 'badge-severity-medium' }}">
+                        {{ l.triggered_by|capitalize }}
+                    </span>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="7" class="muted">No deletions have happened yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

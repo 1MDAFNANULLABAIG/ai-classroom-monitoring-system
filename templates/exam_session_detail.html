@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Exam Session Log{% endblock %}
+{% block content %}
+<h1>🛡️ {{ sess.exam_name }} — {{ sess.room_name }}</h1>
+<p class="muted">
+    {% if sess.class_name %}Class: {{ sess.class_name }} · {% endif %}
+    Started {{ sess.started_at or '—' }}{% if sess.ended_at %} · Ended {{ sess.ended_at }}{% elif sess.started_at %} · <span style="color:#0a7d3c;">still running</span>{% endif %}
+</p>
+
+{% if per_student %}
+<div class="panel">
+    <h3>Flagged Candidates</h3>
+    <table class="table">
+        <thead><tr><th>USN</th><th>Name</th><th>Seat</th><th>Total Alerts</th><th>High Severity</th></tr></thead>
+        <tbody>
+        {% for p in per_student %}
+            <tr>
+                <td>{{ p.usn }}</td>
+                <td>{{ p.student_name }}</td>
+                <td>{{ p.seat_no or '—' }}</td>
+                <td>{{ p.alert_count }}</td>
+                <td>
+                    {% if p.high_count > 0 %}
+                        <span class="badge badge-severity-high">{{ p.high_count }}</span>
+                    {% else %}
+                        <span class="muted">0</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="panel">
+    <h3>Alert Timeline ({{ alerts|length }})</h3>
+    {% if not alerts %}
+    <p class="muted">No alerts were raised during this session.</p>
+    {% else %}
+    <table class="table">
+        <thead><tr><th>Photo</th><th>Clip</th><th>Time</th><th>USN</th><th>Name</th><th>Seat</th><th>Type</th><th>Severity</th><th>Detail</th></tr></thead>
+        <tbody>
+        {% for a in alerts %}
+            <tr>
+                <td>
+                    {% if a.photo_path %}
+                    <a href="{{ url_for('static', filename=a.photo_path) }}" target="_blank">
+                        <img src="{{ url_for('static', filename=a.photo_path) }}" alt="evidence"
+                             style="width:56px;height:56px;object-fit:cover;border-radius:6px;">
+                    </a>
+                    {% else %}
+                    <span class="muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if a.video_path %}
+                    <video src="{{ url_for('static', filename=a.video_path) }}" controls preload="none"
+                           style="width:120px; border-radius:6px; display:block;"></video>
+                    {% elif a.severity in ('high', 'medium') %}
+                    <span class="muted" style="font-size:0.8em;">No clip attached</span>
+                    {% else %}
+                    <span class="muted">—</span>
+                    {% endif %}
+                </td>
+                <td>{{ a.created_at }}</td>
+                <td>{{ a.usn or '—' }}</td>
+                <td>{{ a.student_name or 'Unidentified' }}</td>
+                <td>{{ a.seat_no or '—' }}</td>
+                <td>{{ a.alert_type.replace('_', ' ') }}</td>
+                <td><span class="badge badge-severity-{{ a.severity }}">{{ a.severity }}</span></td>
+                <td>{{ a.detail }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+<p style="margin-top:16px;">
+    <a href="{{ url_for('exam_sessions_list') }}" class="btn btn-secondary btn-sm">← Back to Exam Sessions</a>
+    <a href="{{ url_for('exam_session_allocate', session_id=sess.id) }}" class="btn btn-secondary btn-sm">Seats</a>
+    {% if not sess.ended_at %}
+    <a href="{{ url_for('exam_session_monitor', session_id=sess.id) }}" class="btn btn-primary btn-sm">Monitor</a>
+    {% endif %}
+</p>
+{% endblock %}

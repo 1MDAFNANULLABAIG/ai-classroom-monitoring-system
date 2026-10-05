@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Edit Class{% endblock %}
+{% block content %}
+<h1>Edit Class</h1>
+
+<div class="panel">
+<form method="POST">
+    <label>Class Name</label>
+    <input type="text" name="name" value="{{ cls.name }}" required>
+
+    <label>Class Start Time</label>
+    <input type="time" name="start_time" value="{{ cls.start_time or '' }}">
+    <p class="muted" style="margin:4px 0 0;">e.g. 08:20 — used by Live Camera attendance to auto-mark Late arrivals.</p>
+
+    <label>Class End Time</label>
+    <input type="time" name="end_time" value="{{ cls.end_time or '' }}">
+    <p class="muted" style="margin:4px 0 0;">e.g. 16:00 — shown for reference on the schedule.</p>
+
+    <label>Mark as "Late" after how many minutes past start time?</label>
+    <input type="number" name="late_after_minutes" min="0" value="{{ cls.late_after_minutes }}" style="max-width:120px;">
+
+    <button type="submit" class="btn btn-primary" style="margin-top:16px;">Save Changes</button>
+    <a href="{{ url_for('classes') }}" class="btn btn-secondary">Cancel</a>
+</form>
+</div>
+{% endblock %}

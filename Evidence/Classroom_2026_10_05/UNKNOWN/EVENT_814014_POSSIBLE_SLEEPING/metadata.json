@@ -1,0 +1,23 @@
+{
+    "event_id": "EVENT_814014",
+    "session_id": 1,
+    "usn": "UNKNOWN",
+    "student_name": "Unknown",
+    "track_id": "TRACK_01",
+    "event_type": "POSSIBLE_SLEEPING",
+    "timestamp": "2026-10-05T20:03:34",
+    "duration_seconds": 3.0,
+    "confidence": 0.0,
+    "identity_source": "UNKNOWN",
+    "status": "REVIEW_REQUIRED",
+    "detail": "",
+    "video_path": "activeness_photos/1/event_814014/evidence.mp4",
+    "photos": [
+        "activeness_photos/1/event_814014/before.jpg",
+        "activeness_photos/1/event_814014/event_start.jpg",
+        "activeness_photos/1/event_814014/best_event.jpg",
+        "activeness_photos/1/event_814014/event_end.jpg",
+        "activeness_photos/1/event_814014/after.jpg",
+        "activeness_photos/1/event_814014/student_crop.jpg"
+    ]
+}

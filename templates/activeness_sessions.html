@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Class Activeness Log{% endblock %}
+{% block content %}
+<h1>📋 Class Activeness Log</h1>
+<p class="muted">
+    Every monitored session, with its class-average "active" estimate.
+    These are heuristic, sample-based numbers meant for a teacher to spot
+    patterns — not a certified attendance/attention record and not
+    disciplinary evidence on their own.
+</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Started</th><th>Ended</th><th>Class</th><th>Label</th><th>Students Tracked</th><th>Class Avg Active</th><th>Flags Raised</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for s in sessions %}
+        <tr>
+            <td>{{ s.started_at }}</td>
+            <td>{{ s.ended_at or '—' }}</td>
+            <td>{{ s.class_name }}</td>
+            <td>{{ s.label or '-' }}</td>
+            <td>{{ s.students_tracked }}</td>
+            <td>
+                {% if s.class_active_pct is not none %}
+                    <span class="badge {{ 'badge-present' if s.class_active_pct >= 70 else ('badge-late' if s.class_active_pct >= 40 else 'badge-severity-high') }}">{{ s.class_active_pct }}%</span>
+                {% else %}
+                    <span class="muted">—</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if s.alert_count > 0 %}
+                    <span class="badge badge-late">{{ s.alert_count }}</span>
+                {% else %}
+                    <span class="muted">0</span>
+                {% endif %}
+            </td>
+            <td><a href="{{ url_for('activeness_session_detail', session_id=s.id) }}" class="btn btn-secondary btn-sm">View</a></td>
+        </tr>
+    {% else %}
+        <tr><td colspan="8" class="muted">No monitored sessions yet — start one from Class Activeness Monitoring.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

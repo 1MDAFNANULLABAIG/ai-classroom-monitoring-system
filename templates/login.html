@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Login - Attendance System{% endblock %}
+{% block content %}
+<div class="auth-box">
+    <h2>Login</h2>
+    <p class="muted">Default: <strong>admin</strong> / <strong>admin123</strong></p>
+    <form method="POST">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus>
+
+        <label>Password</label>
+        <input type="password" name="password" required>
+
+        <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+</div>
+{% endblock %}

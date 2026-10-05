@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Exam Rooms{% endblock %}
+{% block content %}
+<h1>🚪 Exam Rooms</h1>
+<p class="muted">Rooms exams can be allocated to. Add every hall/lab you run exams in here first.</p>
+
+<div class="panel">
+    <h3>Add New Room</h3>
+    <form method="POST" class="inline-form">
+        <input type="text" name="room_name" placeholder="e.g. Room F304" required>
+        <input type="number" name="capacity" placeholder="Capacity" min="1" value="30" style="max-width:110px;">
+        <input type="text" name="location" placeholder="Location (optional)">
+        <button type="submit" class="btn btn-primary">Add Room</button>
+    </form>
+</div>
+
+<table class="table">
+    <thead>
+        <tr><th>Room</th><th>Capacity</th><th>Location</th><th># Exam Sessions</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for r in rooms %}
+        <tr>
+            <td>{{ r.room_name }}</td>
+            <td>{{ r.capacity }}</td>
+            <td>{{ r.location or '—' }}</td>
+            <td>{{ r.session_count }}</td>
+            <td>
+                <a href="{{ url_for('exam_room_edit', room_id=r.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+                <form method="POST" action="{{ url_for('exam_room_delete', room_id=r.id) }}"
+                      onsubmit="return confirm('Delete this room and all its exam sessions/alerts?');" style="display:inline">
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="5" class="muted">No exam rooms yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

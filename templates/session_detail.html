@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Session Detail{% endblock %}
+{% block content %}
+<h1>{{ sess.class_name }} — {{ sess.subject or 'Period' }}</h1>
+<p class="muted">
+    {{ sess.session_date }}, {{ sess.start_time }}–{{ sess.end_time }} &middot;
+    Teacher: {{ sess.teacher_name or 'Unknown' }} &middot;
+    Started {{ sess.started_at }}{% if sess.ended_at %} &middot; Ended {{ sess.ended_at }}{% endif %}
+</p>
+<p>
+    {% if sess.teacher_status == 'absent' %}
+        <span class="badge badge-absent">Teacher Absent</span>
+        <span class="muted">— nobody was face-confirmed present within the grace period, so the camera scanned and marked students directly by face.</span>
+    {% elif sess.teacher_status == 'late' %}
+        <span class="badge badge-late">Teacher Late</span>
+        <span class="muted">— students below were marked by the camera scanning faces before the teacher was recognized.</span>
+    {% else %}
+        <span class="badge badge-present">Teacher Present</span>
+    {% endif %}
+</p>
+
+<a href="{{ url_for('sessions_list') }}" class="btn btn-secondary">&larr; Back to Sessions</a>
+
+<table class="table" style="margin-top:16px;">
+    <thead><tr><th>Roll No</th><th>Name</th><th>Status</th><th>Marked At</th></tr></thead>
+    <tbody>
+    {% for r in roster %}
+        <tr>
+            <td>{{ r.roll_no }}</td>
+            <td>{{ r.name }}</td>
+            <td>
+                <span class="badge {{ 'badge-present' if r.status == 'Present' else 'badge-absent' }}">{{ r.status }}</span>
+            </td>
+            <td>{{ r.marked_at or '-' }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

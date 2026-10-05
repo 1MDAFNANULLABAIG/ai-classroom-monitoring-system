@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Class Activeness Report{% endblock %}
+{% block content %}
+<h1>👁️ {{ sess.class_name }} {% if sess.label %}— {{ sess.label }}{% endif %}</h1>
+<p class="muted">
+    Started {{ sess.started_at }}{% if sess.ended_at %} · Ended {{ sess.ended_at }}{% else %} · <span style="color:#0a7d3c;">still running</span>{% endif %}
+</p>
+
+<div class="flash flash-warning">
+    <strong>How to read this report.</strong> Every percentage below is a
+    share of heuristic, camera-based checks made every ~1.5s during the
+    session — e.g. "82% active" means the student looked engaged in 82% of
+    the checks that had enough data, not that they were watched for 82% of
+    the clock time. These signals (head turned away, eyes measured shut,
+    a hand near the face) have real false positives — a stretch, a blink,
+    or scratching an ear can all look similar to the camera. Treat this as
+    a prompt to check in with a student, not as proof of what they were
+    doing, and never as an automatic mark against them.
+</div>
+
+<div class="panel">
+    <h3>Class Summary</h3>
+    {% if class_active_pct is not none %}
+    <p style="font-size:1.4em; margin:4px 0;">
+        <strong>~{{ class_active_pct }}%</strong> of scored checks across the class looked active this session.
+    </p>
+    {% else %}
+    <p class="muted">Not enough data was scored during this session to estimate a class average.</p>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <h3>Per-Student Breakdown ({{ snapshots|length }})</h3>
+    <p class="muted" style="margin-top:-8px;">
+        "insufficient_data" means the camera never got a stable enough read
+        on that student — not zero engagement. Sorted by name.
+    </p>
+    {% if not snapshots %}
+    <p class="muted">No students were tracked during this session.</p>
+    {% else %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Student</th><th>Last Seen As</th><th>Checks Scored</th>
+                <th>Active</th><th>Turned Away</th><th>Eyes Closed</th><th>Phone Near Face</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for s in snapshots %}
+            <tr>
+                <td>{{ s.student_name or ('Track #' ~ s.track_id) }}</td>
+                <td>
+                    {% if s.band == 'active' %}<span class="badge badge-present">🟢 Active</span>
+                    {% elif s.band == 'turned_away' %}<span class="badge badge-late">🟠 Turned away</span>
+                    {% elif s.band == 'eyes_closed' %}<span class="badge badge-severity-high">🟣 Eyes closed</span>
+                    {% elif s.band == 'phone_use' %}<span class="badge badge-severity-high">🔴 Phone near face</span>
+                    {% else %}<span class="muted">⚪ Insufficient data</span>
+                    {% endif %}
+                </td>
+                <td>{{ s.total_scored }}</td>
+                <td>{{ s.active_pct is not none and (s.active_pct ~ '%') or '—' }}</td>
+                <td>{{ s.turned_away_pct is not none and (s.turned_away_pct ~ '%') or '—' }}</td>
+                <td>{{ s.eyes_closed_pct is not none and (s.eyes_closed_pct ~ '%') or '—' }}</td>
+                <td>{{ s.phone_use_pct is not none and (s.phone_use_pct ~ '%') or '—' }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <h3>Snapshot Evidence ({{ alerts|length }})</h3>
+    <p class="muted" style="margin-top:-8px;">
+        A photo is saved the first time a disengagement signal is sustained
+        for a student (with a cooldown, so this isn't every single check) —
+        supporting context for you to look at, not confirmation on its own.
+        Eyes-closed held for 5+ continuous minutes ("Sleeping") or a hand
+        held near the face for 20+ continuous seconds ("Phone, sustained")
+        also get a short buffered video clip alongside the photo. For an
+        identified student, you can turn either of those two into a
+        logged, attributable incident with one click — that's the only
+        way camera signals reach a student's discipline record; nothing
+        here is ever filed automatically.
+    </p>
+    {% if not alerts %}
+    <p class="muted">No sustained disengagement signals were flagged during this session.</p>
+    {% else %}
+    <div style="display:flex; flex-wrap:wrap; gap:16px;">
+        {% set alert_meta = {
+            'phone_use': ('🔴 Phone near face', 'badge-severity-high'),
+            'phone_use_sustained': ('🔴 Phone near face (sustained)', 'badge-severity-high'),
+            'eyes_closed': ('🟣 Eyes closed', 'badge-severity-high'),
+            'sleeping': ('🟣 Sleeping (5+ min)', 'badge-severity-high'),
+            'turned_away': ('🟠 Turned away', 'badge-late'),
+        } %}
+        {% for a in alerts %}
+        <div style="width:240px; border:1px solid var(--border, #ddd); border-radius:8px; padding:8px;{% if a.severity == 'high' %} border-color:#b91c1c;{% endif %}">
+            {% if a.photo_path %}
+            <img src="{{ url_for('static', filename=a.photo_path) }}" style="width:100%; border-radius:6px; display:block; margin-bottom:6px;">
+            {% else %}
+            <div class="muted" style="height:120px; display:flex; align-items:center; justify-content:center; background:#f3f3f3; border-radius:6px; margin-bottom:6px;">No photo saved</div>
+            {% endif %}
+            {% if a.video_path %}
+            <video src="{{ url_for('static', filename=a.video_path) }}" controls preload="none" style="width:100%; border-radius:6px; display:block; margin-bottom:6px;"></video>
+            {% elif a.alert_type in ('sleeping', 'phone_use_sustained') %}
+            <p class="muted" style="font-size:0.8em; margin:0 0 6px;">No video clip attached (browser upload may not have finished, or wasn't recording).</p>
+            {% endif %}
+            <strong>{{ a.student_name or 'Unidentified' }}</strong><br>
+            <span class="badge {{ alert_meta[a.alert_type][1] if a.alert_type in alert_meta else 'badge-late' }}">
+                {{ alert_meta[a.alert_type][0] if a.alert_type in alert_meta else a.alert_type }}
+            </span>
+            <p class="muted" style="font-size:0.85em; margin:6px 0 2px;">{{ a.detail }}</p>
+            <span class="muted" style="font-size:0.8em;">{{ a.created_at }}</span>
+
+            {% if a.student_id and a.alert_type in behavior_ai_auto_flag_map %}
+            <form method="POST" action="{{ url_for('behavior_flag_add') }}" style="margin-top:8px;">
+                <input type="hidden" name="student_id" value="{{ a.student_id }}">
+                <input type="hidden" name="class_id" value="{{ sess.class_id }}">
+                <input type="hidden" name="flag_type" value="{{ behavior_ai_auto_flag_map[a.alert_type] }}">
+                <input type="hidden" name="severity" value="{{ 'high' if a.severity == 'high' else 'medium' }}">
+                <input type="hidden" name="note" value="Auto-detected by Activeness Monitor: {{ a.detail }}">
+                <input type="hidden" name="next" value="{{ url_for('activeness_session_detail', session_id=sess.id) }}">
+                <button type="submit" class="btn btn-secondary btn-sm" style="width:100%;">📋 Log as incident</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<p style="margin-top:16px;"><a href="{{ url_for('activeness_sessions_list') }}" class="btn btn-secondary btn-sm">← Back to log</a></p>
+{% endblock %}

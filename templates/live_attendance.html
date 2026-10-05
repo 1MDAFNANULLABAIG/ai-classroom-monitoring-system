@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% block title %}Live Attendance{% endblock %}
+{% block content %}
+<h1>📷 Live Camera Attendance</h1>
+<p class="muted">
+    Point the camera at the teacher first — once they're recognized and the period is confirmed,
+    the camera automatically switches to recognizing students for that class.
+</p>
+
+<form method="GET" class="inline-form">
+    <select name="class_id" onchange="this.form.submit()">
+        {% for c in classes %}
+        <option value="{{ c.id }}" {% if selected_class == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    <input type="date" name="att_date" value="{{ att_date }}" onchange="this.form.submit()">
+</form>
+
+{% if not model_trained %}
+<div class="flash flash-warning">
+    No face recognition model has been trained yet.
+    Go to <a href="{{ url_for('face_setup') }}">Face Setup</a> to capture student faces and train the model first.
+</div>
+{% elif not classes %}
+<div class="flash flash-warning">Add a class and some students first.</div>
+{% else %}
+
+<div style="display:flex; gap:24px; flex-wrap:wrap;">
+    <div class="panel" style="flex:1; min-width:340px;">
+        {% if is_today %}
+        <div id="period-banner" class="panel" style="background:#eef2ff; margin-bottom:16px;">
+            <p class="muted">Checking current period...</p>
+        </div>
+        {% endif %}
+
+        <div style="position:relative; max-width:480px;">
+            <video id="video" width="480" height="360" autoplay muted playsinline
+                   style="background:#000; border-radius:8px; width:100%; max-width:480px; display:block;"></video>
+            <canvas id="overlay" width="480" height="360"
+                    style="position:absolute; top:0; left:0; width:100%; max-width:480px; pointer-events:none;"></canvas>
+            <canvas id="capture-canvas" width="480" height="360" style="display:none;"></canvas>
+        </div>
+        <p id="status-text" class="muted" style="margin-top:10px;">Click "Start Camera" to begin.</p>
+        <button id="start-btn" class="btn btn-primary">Start Camera</button>
+        <button id="stop-btn" class="btn btn-secondary" disabled>Stop</button>
+    </div>
+
+    <div class="panel" style="flex:1; min-width:280px;">
+        <h3>Class Roster — {{ att_date }}</h3>
+        <table class="table" id="roster-table">
+            <thead><tr><th>Roll No</th><th>Name</th><th>Status</th></tr></thead>
+            <tbody id="roster-body">
+                <tr><td colspan="3" class="muted">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const classId = "{{ selected_class }}";
+const attDate = "{{ att_date }}";
+const isToday = {{ 'true' if is_today else 'false' }};
+
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const captureCanvas = document.getElementById('capture-canvas');
+const captureCtx = captureCanvas.getContext('2d');
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const statusText = document.getElementById('status-text');
+const rosterBody = document.getElementById('roster-body');
+const periodBanner = document.getElementById('period-banner');
+
+let stream = null;
+let workTimer = null;
+let stateTimer = null;
+let rosterTimer = null;
+let currentPeriod = null;
+let currentSession = null; // {id, teacher_name, subject, present_count, total_students}
+let currentState = isToday ? 'IDLE' : 'NO_GATE';
+let countdownSeconds = 0;
+let countdownTimer = null;
+
+// mode: 'no_gate' (past/future date — mark directly, no teacher check),
+// 'idle' (no period scheduled right now), 'awaiting_teacher', 'marking_students', 'ended'
+let mode = isToday ? 'idle' : 'no_gate';
+
+function formatTime(totalSec) {
+    if (totalSec <= 0) return '00:00';
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function syncCountdown(sec) {
+    countdownSeconds = Math.max(0, sec);
+    const el = document.getElementById('grace-timer-live');
+    if (el) el.textContent = formatTime(countdownSeconds);
+    if (!countdownTimer) {
+        countdownTimer = setInterval(() => {
+            if (countdownSeconds > 0) {
+                countdownSeconds--;
+                const timerEl = document.getElementById('grace-timer-live');
+                if (timerEl) timerEl.textContent = formatTime(countdownSeconds);
+                if (countdownSeconds === 0 && currentState === 'WAITING_FOR_TEACHER') {
+                    pollState();
+                }
+            }
+        }, 1000);
+    }
+}
+
+function renderBanner(data) {
+    if (!periodBanner) return;
+    if (!currentPeriod) {
+        periodBanner.innerHTML = '<p class="muted">No period scheduled right now for this class.</p>';
+        return;
+    }
+    if (currentPeriod.period_type === 'break') {
+        periodBanner.innerHTML = `<p>☕ <strong>${currentPeriod.subject || 'Break'}</strong> (${currentPeriod.start_time}–${currentPeriod.end_time}) — no attendance during breaks.</p>`;
+        return;
+    }
+
+    let stateHtml = '';
+    const subject = (currentSession && currentSession.subject) || currentPeriod.subject || ('Period ' + currentPeriod.period_number);
+    const periodTime = `(${currentPeriod.start_time}–${currentPeriod.end_time})`;
+
+    if (currentState === 'WAITING_FOR_TEACHER') {
+        stateHtml = `
+            <div style="background:var(--amber-light, #fef3c7); border:1px solid var(--amber-text, #f59e0b); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <span style="font-weight:700; color:var(--amber-text, #b45309); font-size:1.05rem;">⏳ WAITING FOR TEACHER</span>
+                    <span style="background:#b45309; color:#fff; padding:4px 10px; border-radius:6px; font-weight:700; font-family:monospace; font-size:1.15rem;">
+                        <span id="grace-timer-live">${formatTime(countdownSeconds)}</span>
+                    </span>
+                </div>
+                <p style="margin:6px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    Teacher grace period: <strong>${data && data.grace_deadline ? data.grace_deadline : '30 min from start'}</strong>. Student attendance is locked.
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'TEACHER_CONFIRMED') {
+        stateHtml = `
+            <div style="background:var(--green-light, #ecfdf5); border:1px solid var(--green-text, #10b981); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--green-text, #065f46); font-size:1.05rem;">✅ TEACHER VERIFIED &middot; STUDENT ATTENDANCE ENABLED</div>
+                <p style="margin:4px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    Teacher: <strong>${currentSession ? (currentSession.teacher_name || 'Confirmed') : 'Confirmed'}</strong> (Present on time)
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'TEACHER_ABSENT_AUTO_ATTENDANCE') {
+        stateHtml = `
+            <div style="background:var(--red-light, #fee2e2); border:1px solid var(--red-text, #ef4444); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--red-text, #991b1b); font-size:1.05rem;">🚫 TEACHER ABSENT &middot; AUTOMATIC ATTENDANCE ACTIVE</div>
+                <p style="margin:4px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    30-minute grace period elapsed without teacher. Camera is scanning and marking student attendance directly.
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'TEACHER_LATE') {
+        stateHtml = `
+            <div style="background:var(--amber-light, #fffbeb); border:1px solid var(--amber-text, #d97706); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--amber-text, #92400e); font-size:1.05rem;">⏰ TEACHER LATE &middot; STUDENT ATTENDANCE ACTIVE</div>
+                <p style="margin:4px 0 0 0; color:var(--ink); font-size:0.9rem;">
+                    Teacher: <strong>${currentSession ? (currentSession.teacher_name || 'Late') : 'Late'}</strong> (Arrived after 30-minute grace period).
+                </p>
+            </div>
+        `;
+    } else if (currentState === 'SESSION_ENDED') {
+        stateHtml = `
+            <div style="background:var(--blue-light, #f1f5f9); border:1px solid var(--muted, #94a3b8); border-radius:8px; padding:12px 16px; margin-bottom:12px;">
+                <div style="font-weight:700; color:var(--ink); font-size:1.05rem;">🏁 SESSION ENDED</div>
+                <p style="margin:4px 0 0 0; color:var(--muted); font-size:0.9rem;">Attendance for this period is closed.</p>
+            </div>
+        `;
+    }
+
+    periodBanner.innerHTML = `
+        <p>📘 <strong>${subject}</strong> ${periodTime}</p>
+        ${stateHtml}
+        <p>🎓 Students marked: <strong>${(currentSession && currentSession.present_count != null) ? currentSession.present_count : 0} / ${(currentSession && currentSession.total_students != null) ? currentSession.total_students : '?'}</strong></p>
+    `;
+}
+
+function pollState() {
+    if (!isToday) return;
+    fetch(`/attendance/smart/state?class_id=${classId}`)
+    .then(r => r.json())
+    .then(data => {
+        currentPeriod = data.period;
+        currentSession = data.session;
+        currentState = data.state || 'IDLE';
+
+        if (!currentPeriod || currentPeriod.period_type === 'break') {
+            countdownSeconds = 0;
+            mode = 'idle';
+        } else if (currentState === 'WAITING_FOR_TEACHER') {
+            syncCountdown(data.remaining_seconds || 0);
+            mode = 'awaiting_teacher';
+        } else if (currentState === 'SESSION_ENDED') {
+            countdownSeconds = 0;
+            mode = 'ended';
+        } else if (data.student_attendance_allowed && currentSession) {
+            countdownSeconds = 0;
+            mode = 'marking_students';
+        } else {
+            countdownSeconds = 0;
+            mode = 'idle';
+        }
+
+        renderBanner(data);
+    })
+    .catch(() => {});
+}
+
+function drawBoxes(faces) {
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    (faces || []).forEach(f => {
+        let color = '#f59e0b'; // unknown / orange
+        if (f.status === 'marked') color = '#10b981';
+        else if (f.status === 'already_marked') color = '#3b82f6';
+        else if (f.status === 'teacher') color = '#8b5cf6';
+        else if (f.status === 'review') color = '#eab308'; // under review / yellow
+
+        overlayCtx.strokeStyle = color;
+        overlayCtx.lineWidth = 3;
+        overlayCtx.strokeRect(f.x, f.y, f.w, f.h);
+
+        let label = (f.track_id ? `[#${f.track_id}] ` : '') + (f.name || 'Unknown');
+        if (f.confidence) label += ` (${f.confidence}%)`;
+        overlayCtx.fillStyle = color;
+        const textWidth = overlayCtx.measureText(label).width + 12;
+        overlayCtx.fillRect(f.x, f.y - 20, textWidth, 20);
+        overlayCtx.fillStyle = '#fff';
+        overlayCtx.font = 'bold 12px sans-serif';
+        overlayCtx.fillText(label, f.x + 5, f.y - 5);
+    });
+}
+
+function loadRoster() {
+    fetch(`/attendance/live/roster?class_id=${classId}&att_date=${attDate}`)
+    .then(r => r.json())
+    .then(rows => {
+        if (!rows.length) {
+            rosterBody.innerHTML = '<tr><td colspan="3" class="muted">No students in this class.</td></tr>';
+            return;
+        }
+        rosterBody.innerHTML = rows.map(s => {
+            let badgeClass = 'badge-absent';
+            if (s.status === 'Present') badgeClass = 'badge-present';
+            else if (s.status === 'Late') badgeClass = 'badge-late';
+            return `<tr>
+                <td>${s.roll_no}</td>
+                <td>${s.name}</td>
+                <td><span class="badge ${badgeClass}">${s.status}</span></td>
+            </tr>`;
+        }).join('');
+    });
+}
+
+async function startCamera() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 }, audio: false });
+        video.srcObject = stream;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusText.textContent = 'Camera running...';
+        workTimer = setInterval(tick, 1500);
+    } catch (err) {
+        statusText.textContent = 'Could not access camera: ' + err.message;
+    }
+}
+
+function stopCamera() {
+    clearInterval(workTimer);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    statusText.textContent = 'Camera stopped.';
+}
+
+function tick() {
+    if (mode === 'idle') {
+        statusText.textContent = 'No class period scheduled right now.';
+        return;
+    }
+    if (mode === 'ended') {
+        statusText.textContent = 'This period has ended — attendance is closed.';
+        return;
+    }
+
+    captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.8);
+
+    if (mode === 'awaiting_teacher') {
+        statusText.textContent = `Looking for scheduled teacher... Grace period: ${formatTime(countdownSeconds)}`;
+        fetch('/attendance/smart/start_session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: dataUrl, class_id: classId })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                statusText.textContent = `Teacher present: ${data.teacher_name}${data.note ? ' (' + data.note + ')' : ''}. Now recognizing students...`;
+                pollState();
+            } else {
+                statusText.textContent = data.message || 'Could not identify the teacher yet.';
+            }
+        })
+        .catch(() => { statusText.textContent = 'Network error while identifying the teacher.'; });
+        return;
+    }
+
+    // Phase 2 (mode === 'marking_students' or 'no_gate' for past/future dates):
+    statusText.textContent = 'Recognizing students...';
+    fetch('/attendance/live/recognize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl, class_id: classId, att_date: attDate })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            statusText.textContent = data.message || 'Recognition error.';
+            return;
+        }
+        drawBoxes(data.faces || []);
+        statusText.textContent = (data.faces && data.faces.length)
+            ? 'Detected: ' + data.faces.map(f => f.name).join(', ')
+            : 'No face in frame.';
+        if (data.newly_marked && data.newly_marked.length) loadRoster();
+    })
+    .catch(() => { statusText.textContent = 'Network error during recognition.'; });
+}
+
+startBtn.addEventListener('click', startCamera);
+stopBtn.addEventListener('click', stopCamera);
+
+loadRoster();
+rosterTimer = setInterval(loadRoster, 5000);
+
+if (isToday) {
+    pollState();
+    stateTimer = setInterval(pollState, 5000);
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+{% block title %}Real-Time AI Classroom Intelligence{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
+    <div>
+        <h1 style="margin:0; display:flex; align-items:center; gap:10px;">
+            <span>🧠 Real-Time AI Classroom Intelligence System</span>
+        </h1>
+        <p class="muted" style="margin:4px 0 0 0;">
+            Multi-modal vision analysis: Presence, observable attention, activity states, sleeping detection, phone usage, interactions, ID card compliance, and responsible behavioral trends.
+        </p>
+    </div>
+    <div>
+        <span class="status-pill {{ 'status-ready' if model_status.face_landmarker_ready else 'status-not-ready' }}">Face 468-Mesh</span>
+        <span class="status-pill {{ 'status-ready' if model_status.pose_landmarker_ready else 'status-not-ready' }}">Pose 3D</span>
+        <span class="status-pill {{ 'status-ready' if model_status.object_detector_ready else 'status-not-ready' }}">Object Detector</span>
+        <span class="status-pill {{ 'status-ready' if model_status.sface_ready else 'status-not-ready' }}">SFace 128-D</span>
+    </div>
+</div>
+
+{% if not classes %}
+<div class="flash flash-warning">Add a class first.</div>
+{% else %}
+
+<form method="GET" class="inline-form" style="margin-bottom:16px;">
+    <label style="font-weight:600; margin-right:8px;">Class:</label>
+    <select name="class_id" onchange="this.form.submit()" style="padding:6px 12px; border-radius:6px; font-weight:500;">
+        {% for c in classes %}
+        <option value="{{ c.id }}" {% if selected_class == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+</form>
+
+<!-- Row 1: Real-Time Classroom Intelligence Overview Metrics -->
+<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:16px;">
+    <div class="panel" style="padding:12px; text-align:center;">
+        <span class="muted" style="font-size:12px; text-transform:uppercase;">Total Enrolled</span>
+        <div id="stat-total" style="font-size:24px; font-weight:700; color:#3b82f6;">0</div>
+    </div>
+    <div class="panel" style="padding:12px; text-align:center;">
+        <span class="muted" style="font-size:12px; text-transform:uppercase;">Present (Verified)</span>
+        <div id="stat-present" style="font-size:24px; font-weight:700; color:#22c55e;">0</div>
+    </div>
+    <div class="panel" style="padding:12px; text-align:center;">
+        <span class="muted" style="font-size:12px; text-transform:uppercase;">Absent</span>
+        <div id="stat-absent" style="font-size:24px; font-weight:700; color:#ef4444;">0</div>
+    </div>
+    <div class="panel" style="padding:12px; text-align:center;">
+        <span class="muted" style="font-size:12px; text-transform:uppercase;">Unknown / In Review</span>
+        <div id="stat-unknown" style="font-size:24px; font-weight:700; color:#f59e0b;">0</div>
+    </div>
+    <div class="panel" style="padding:12px; text-align:center;">
+        <span class="muted" style="font-size:12px; text-transform:uppercase;">Activity Index</span>
+        <div id="stat-activity-index" style="font-size:24px; font-weight:700; color:#8b5cf6;">0%</div>
+    </div>
+    <div class="panel" style="padding:12px; text-align:center;">
+        <span class="muted" style="font-size:12px; text-transform:uppercase;">Observable Engagement</span>
+        <div id="stat-engagement" style="font-size:13px; font-weight:700; margin-top:6px; color:#10b981;">INITIALIZING</div>
+    </div>
+    <div class="panel" style="padding:12px; text-align:center;">
+        <span class="muted" style="font-size:12px; text-transform:uppercase;">Teaching Activity</span>
+        <div id="stat-teacher" style="font-size:13px; font-weight:700; margin-top:6px; color:#06b6d4;">WAITING</div>
+    </div>
+</div>
+
+<!-- Row 2: Camera Feed + Real-Time Heatmap / Overview -->
+<div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:20px;">
+    <!-- Live Camera Feed -->
+    <div class="panel" style="flex:1.2; min-width:340px;">
+        <div style="position:relative; width:100%; max-width:540px; margin:0 auto;">
+            <video id="video" width="540" height="380" autoplay muted playsinline
+                   style="background:#0f172a; border-radius:8px; width:100%; display:block;"></video>
+            <canvas id="overlay" width="540" height="380"
+                    style="position:absolute; top:0; left:0; width:100%; pointer-events:none;"></canvas>
+            <canvas id="capture-canvas" width="540" height="380" style="display:none;"></canvas>
+        </div>
+
+        <div style="margin-top:12px; display:flex; gap:10px; align-items:center;">
+            <input type="text" id="label-input" placeholder="Session label (e.g. 'Period 2 - Computer Networks')"
+                   style="flex:1; padding:8px 12px; border-radius:6px; border:1px solid #cbd5e1;">
+            <button id="start-btn" class="btn btn-primary" style="padding:8px 18px;">Start Intelligence</button>
+            <button id="stop-btn" class="btn btn-secondary" style="padding:8px 18px;" disabled>Stop</button>
+        </div>
+        <p id="status-text" class="muted" style="margin-top:6px; font-size:13px;">Click "Start Intelligence" to activate multi-modal stream analysis.</p>
+
+        <!-- Live Flash Alerts -->
+        <div id="live-alerts" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- Classroom Heatmap & Visual Compliance -->
+    <div class="panel" style="flex:1; min-width:320px; display:flex; flex-direction:column; gap:16px;">
+        <div>
+            <h3 style="margin:0 0 6px 0; display:flex; justify-content:space-between;">
+                <span>🗺️ Classroom Heatmap & Spatial Seats</span>
+                <span id="seat-count-badge" class="badge" style="font-size:11px;">Live Sync</span>
+            </h3>
+            <div id="heatmap-container" style="background:#1e293b; border-radius:8px; height:200px; position:relative; overflow:hidden; border:1px solid #334155;">
+                <div style="position:absolute; top:4px; left:8px; font-size:11px; color:#94a3b8;">TEACHING ZONE / BOARD AREA</div>
+                <canvas id="heatmap-canvas" width="400" height="200" style="width:100%; height:100%;"></canvas>
+            </div>
+            <div style="display:flex; justify-content:space-around; margin-top:6px; font-size:11px;" class="muted">
+                <span>🟢 Attentive / Writing</span>
+                <span>🟡 Review / Looking Away</span>
+                <span>🔴 Significant Event</span>
+                <span>⚪ Unknown</span>
+            </div>
+        </div>
+
+        <!-- Visual Compliance Breakdown -->
+        <div style="border-top:1px solid #e2e8f0; padding-top:12px;">
+            <h4 style="margin:0 0 8px 0;">🛡️ Visual Compliance & Dress</h4>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px;">
+                <div style="background:#f8fafc; padding:8px; border-radius:6px; border-left:3px solid #22c55e;">
+                    <div class="muted" style="font-size:11px;">ID CARD DETECTED</div>
+                    <strong id="compliance-id-visible">0 Students</strong>
+                </div>
+                <div style="background:#f8fafc; padding:8px; border-radius:6px; border-left:3px solid #f59e0b;">
+                    <div class="muted" style="font-size:11px;">ID CARD UNKNOWN / UNCLEAR</div>
+                    <strong id="compliance-id-unclear">0 Students</strong>
+                </div>
+                <div style="background:#f8fafc; padding:8px; border-radius:6px; border-left:3px solid #3b82f6;">
+                    <div class="muted" style="font-size:11px;">UNIFORM STATUS</div>
+                    <strong id="compliance-uniform">Compliant (Configured)</strong>
+                </div>
+                <div style="background:#f8fafc; padding:8px; border-radius:6px; border-left:3px solid #94a3b8;">
+                    <div class="muted" style="font-size:11px;">SHOES VISIBILITY</div>
+                    <strong id="compliance-shoes">Occluded by Desks</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 3: Live Student Intelligence Cards -->
+<div class="panel" style="margin-bottom:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0;">👥 Live Tracked Student Intelligence Cards</h3>
+        <span class="muted" style="font-size:12px;">Click "Timeline" on any candidate to inspect behavioral patterns.</span>
+    </div>
+    <div id="student-cards-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:14px;">
+        <div class="muted" style="grid-column: 1 / -1; padding:20px; text-align:center;">
+            No live students detected yet. Start monitoring to populate intelligence cards.
+        </div>
+    </div>
+</div>
+
+<!-- Row 4: Confirmed Event History & Evidence Vault -->
+<div class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0;">📂 Confirmed Classroom Behavioral Events & Evidence Vault</h3>
+        <span class="muted" style="font-size:12px;">Stored in Evidence/Classroom_YYYY_MM_DD/ with 10s video & 6-photo packages</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table" style="width:100%;" id="events-table">
+            <thead>
+                <tr>
+                    <th>Event ID</th>
+                    <th>Time</th>
+                    <th>USN / Student</th>
+                    <th>Observed Behavior</th>
+                    <th>Duration</th>
+                    <th>Confidence</th>
+                    <th>Identity Source</th>
+                    <th>Evidence</th>
+                </tr>
+            </thead>
+            <tbody id="events-tbody">
+                <tr><td colspan="8" class="muted" style="text-align:center;">No behavioral events recorded in this session.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal Dialog: Evidence Inspector -->
+<div id="evidence-modal" style="display:none; position:fixed; z-index:10000; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; width:92%; max-width:850px; max-height:90vh; overflow-y:auto; padding:20px; box-shadow:0 10px 25px rgba(0,0,0,0.4); position:relative;">
+        <button onclick="closeEvidenceModal()" style="position:absolute; top:12px; right:16px; font-size:24px; border:none; background:transparent; cursor:pointer;">&times;</button>
+        <h2 id="modal-title" style="margin-top:0;">Evidence Inspection</h2>
+        <div id="modal-meta" class="muted" style="margin-bottom:12px; font-size:13px;"></div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+            <div>
+                <h4 style="margin:0 0 6px 0;">🎥 10-Second Video Clip</h4>
+                <video id="modal-video" controls style="width:100%; border-radius:6px; background:#000; height:220px;"></video>
+            </div>
+            <div>
+                <h4 style="margin:0 0 6px 0;">📸 Peak Event Photo</h4>
+                <img id="modal-best-photo" src="" style="width:100%; border-radius:6px; object-fit:contain; height:220px; background:#f1f5f9;">
+            </div>
+        </div>
+
+        <h4 style="margin:0 0 6px 0;">📷 Multi-Photo Sequence</h4>
+        <div id="modal-photo-strip" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:8px;"></div>
+    </div>
+</div>
+
+<!-- Drawer / Modal: Student Timeline & Tendency Drawer -->
+<div id="timeline-modal" style="display:none; position:fixed; z-index:10000; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:12px; width:90%; max-width:700px; max-height:85vh; overflow-y:auto; padding:20px; position:relative;">
+        <button onclick="closeTimelineModal()" style="position:absolute; top:12px; right:16px; font-size:24px; border:none; background:transparent; cursor:pointer;">&times;</button>
+        <h2 id="timeline-student-name" style="margin-top:0;">Student Behavioral Timeline</h2>
+        <div id="timeline-student-usn" class="muted" style="margin-bottom:12px;"></div>
+
+        <div class="panel" style="background:#f8fafc; margin-bottom:14px; padding:12px;">
+            <h4 style="margin:0 0 6px 0; color:#6366f1;">📈 Multi-Window Observable Behavioral Trends</h4>
+            <div id="timeline-trends" style="font-size:13px;">Loading trends…</div>
+        </div>
+
+        <div class="panel" style="background:#eff6ff; margin-bottom:14px; padding:12px; border-left:4px solid #3b82f6;">
+            <h4 style="margin:0 0 4px 0; color:#1e40af;">🔮 Observable Short-Term Behavioral Tendencies</h4>
+            <div id="timeline-predictions" style="font-size:13px;">Analyzing tendencies…</div>
+        </div>
+
+        <h4 style="margin:0 0 6px 0;">⏱️ State Timeline Chronology</h4>
+        <div id="timeline-chronology" style="font-size:13px; max-height:200px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; padding:8px;">
+            No recorded transitions yet.
+        </div>
+    </div>
+</div>
+
+<script>
+const classId = "{{ selected_class }}";
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const captureCanvas = document.getElementById('capture-canvas');
+const captureCtx = captureCanvas.getContext('2d');
+const heatmapCanvas = document.getElementById('heatmap-canvas');
+const heatmapCtx = heatmapCanvas.getContext('2d');
+
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const statusText = document.getElementById('status-text');
+const labelInput = document.getElementById('label-input');
+const liveAlerts = document.getElementById('live-alerts');
+const studentCardsGrid = document.getElementById('student-cards-grid');
+const eventsTbody = document.getElementById('events-tbody');
+
+let stream = null;
+let workTimer = null;
+let sessionId = null;
+let recordedEvents = [];
+let latestStudentList = [];
+
+startBtn.onclick = async () => {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+        video.srcObject = stream;
+        await video.play();
+
+        const resp = await fetch('/attendance/activeness/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ class_id: classId, label: labelInput.value.trim() })
+        });
+        const d = await resp.json();
+        if (!d.success) {
+            alert('Failed to start session: ' + (d.message || 'Unknown error'));
+            return;
+        }
+        sessionId = d.session_id;
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        statusText.textContent = `● Live Classroom Intelligence Session #${sessionId} active.`;
+        statusText.style.color = '#10b981';
+
+        workTimer = setInterval(processFrame, 1200);
+    } catch (err) {
+        alert('Camera access failed: ' + err.message);
+    }
+};
+
+stopBtn.onclick = async () => {
+    if (workTimer) clearInterval(workTimer);
+    workTimer = null;
+
+    if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+    }
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+    if (sessionId) {
+        await fetch('/attendance/activeness/end', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId })
+        });
+    }
+
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    statusText.textContent = 'Session ended. Summary preserved.';
+    statusText.style.color = '#64748b';
+};
+
+async function processFrame() {
+    if (!stream || video.videoWidth === 0) return;
+
+    captureCanvas.width = video.videoWidth;
+    captureCanvas.height = video.videoHeight;
+    captureCtx.drawImage(video, 0, 0);
+    const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.85);
+
+    try {
+        const resp = await fetch('/attendance/activeness/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId, image: dataUrl })
+        });
+        const data = await resp.json();
+        if (!data.success) return;
+
+        drawOverlay(data.boxes);
+        updateSummary(data.summary);
+        drawHeatmap(data.heatmap);
+        renderStudentCards(data.students);
+        handleAlerts(data.alerts);
+    } catch (err) {
+        console.error('Frame analysis error:', err);
+    }
+}
+
+function drawOverlay(boxes) {
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    const sx = overlay.width / (video.videoWidth || 640);
+    const sy = overlay.height / (video.videoHeight || 480);
+
+    (boxes || []).forEach(b => {
+        const x = b.x * sx;
+        const y = b.y * sy;
+        const w = b.w * sx;
+        const h = b.h * sy;
+
+        overlayCtx.strokeStyle = b.color || '#22c55e';
+        overlayCtx.lineWidth = 3;
+        overlayCtx.strokeRect(x, y, w, h);
+
+        overlayCtx.fillStyle = b.color || '#22c55e';
+        overlayCtx.font = 'bold 12px sans-serif';
+        const label = b.label || '';
+        const tw = overlayCtx.measureText(label).width + 8;
+        overlayCtx.fillRect(x, Math.max(0, y - 20), tw, 20);
+
+        overlayCtx.fillStyle = '#ffffff';
+        overlayCtx.fillText(label, x + 4, Math.max(14, y - 6));
+    });
+}
+
+function updateSummary(s) {
+    if (!s) return;
+    document.getElementById('stat-total').textContent = s.total_students || 0;
+    document.getElementById('stat-present').textContent = s.present || 0;
+    document.getElementById('stat-absent').textContent = s.absent || 0;
+    document.getElementById('stat-unknown').textContent = s.unknown || 0;
+    document.getElementById('stat-activity-index').textContent = (s.classroom_activity_index || 0) + '%';
+    document.getElementById('stat-engagement').textContent = s.observable_engagement || 'NORMAL';
+    document.getElementById('stat-teacher').textContent = (s.teacher_activity || 'TEACHER_ABSENT').replace('_', ' ');
+
+    const comp = s.compliance_breakdown || {};
+    document.getElementById('compliance-id-visible').textContent = (comp.id_card_visible || 0) + ' Students';
+    document.getElementById('compliance-id-unclear').textContent = ((comp.id_card_not_visible || 0) + (comp.insufficient_visibility || 0)) + ' Students';
+}
+
+function drawHeatmap(points) {
+    heatmapCtx.fillStyle = '#1e293b';
+    heatmapCtx.fillRect(0, 0, heatmapCanvas.width, heatmapCanvas.height);
+
+    // Draw teaching zone divider
+    heatmapCtx.strokeStyle = '#334155';
+    heatmapCtx.lineWidth = 1;
+    heatmapCtx.beginPath();
+    heatmapCtx.moveTo(0, 30);
+    heatmapCtx.lineTo(heatmapCanvas.width, 30);
+    heatmapCtx.stroke();
+
+    (points || []).forEach(pt => {
+        const px = (pt.x / 640.0) * heatmapCanvas.width;
+        const py = Math.max(45, (pt.y / 480.0) * heatmapCanvas.height);
+
+        heatmapCtx.beginPath();
+        heatmapCtx.arc(px, py, 9, 0, 2 * Math.PI);
+        heatmapCtx.fillStyle = pt.color || '#22c55e';
+        heatmapCtx.fill();
+        heatmapCtx.strokeStyle = '#ffffff';
+        heatmapCtx.lineWidth = 1.5;
+        heatmapCtx.stroke();
+
+        heatmapCtx.fillStyle = '#cbd5e1';
+        heatmapCtx.font = '10px sans-serif';
+        heatmapCtx.fillText(pt.usn || pt.track_id, px - 14, py + 18);
+    });
+}
+
+function renderStudentCards(students) {
+    latestStudentList = students || [];
+    if (!students || !students.length) {
+        studentCardsGrid.innerHTML = '<div class="muted" style="grid-column: 1 / -1; padding:20px; text-align:center;">No students tracked.</div>';
+        return;
+    }
+
+    studentCardsGrid.innerHTML = students.map(s => {
+        const isVerified = s.presence === 'PRESENT';
+        const badgeClass = isVerified ? 'badge-success' : 'badge-warning';
+        const cardBg = s.current_activity.includes('SLEEP') || s.current_activity.includes('PHONE') ? '#fff1f2' : '#ffffff';
+
+        return `
+        <div class="panel" style="background:${cardBg}; border-radius:8px; padding:12px; border:1px solid #e2e8f0; display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong style="font-size:15px;">${s.name}</strong>
+                    <span class="badge ${badgeClass}">${s.presence}</span>
+                </div>
+                <div class="muted" style="font-size:12px; margin-bottom:8px;">USN: ${s.usn} | ${s.track_id} (${s.identity_source})</div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px; margin-bottom:8px;">
+                    <div><strong>Activity:</strong> ${s.current_activity}</div>
+                    <div><strong>Attention:</strong> ${s.attention_state.replace('ATTENTION_TOWARD_', '')}</div>
+                    <div><strong>Phone:</strong> ${s.phone_status}</div>
+                    <div><strong>ID Card:</strong> ${s.id_card}</div>
+                    <div><strong>Expression:</strong> ${s.facial_expression.replace('_APPEARANCE', '')}</div>
+                    <div><strong>Seat:</strong> ${s.seat_status}</div>
+                </div>
+
+                <div style="font-size:11px; background:#f1f5f9; padding:6px; border-radius:4px; margin-bottom:8px;">
+                    <strong>Tendency:</strong> ${s.risk_indicator}
+                </div>
+            </div>
+
+            <div style="display:flex; gap:6px; justify-content:flex-end;">
+                <button class="btn btn-secondary" style="font-size:11px; padding:4px 8px;" onclick="openTimelineModal('${s.usn}', '${s.name}')">Timeline</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function handleAlerts(alerts) {
+    (alerts || []).forEach(a => {
+        recordedEvents.unshift(a);
+        const div = document.createElement('div');
+        div.className = 'flash ' + (a.severity === 'high' ? 'flash-danger' : 'flash-warning');
+        div.style.marginBottom = '6px';
+        div.innerHTML = `<strong>⚠️ ${a.event_type}</strong>: ${a.student_name} (${a.usn}) — ${a.detail}
+                         <button class="btn btn-secondary" style="float:right; padding:2px 8px; font-size:11px;" onclick="viewEventEvidence('${a.event_id}')">View Evidence</button>`;
+        liveAlerts.prepend(div);
+        setTimeout(() => div.remove(), 12000);
+    });
+
+    if (alerts && alerts.length > 0) {
+        renderEventsTable();
+    }
+}
+
+function renderEventsTable() {
+    if (!recordedEvents.length) return;
+    eventsTbody.innerHTML = recordedEvents.map(e => `
+        <tr>
+            <td><code>${e.event_id}</code></td>
+            <td>${e.created_at || 'Just now'}</td>
+            <td><strong>${e.student_name}</strong><br><span class="muted" style="font-size:11px;">${e.usn}</span></td>
+            <td><span class="badge ${e.severity === 'high' ? 'badge-danger' : 'badge-warning'}">${e.event_type}</span></td>
+            <td>${e.duration_seconds ? e.duration_seconds + 's' : '3.0s'}</td>
+            <td>${e.confidence ? (e.confidence > 1 ? e.confidence + '%' : Math.round(e.confidence * 100) + '%') : '85%'}</td>
+            <td><code>${e.identity_source || 'FACE_VERIFIED'}</code></td>
+            <td><button class="btn btn-secondary" style="padding:4px 8px; font-size:11px;" onclick="viewEventEvidence('${e.event_id}')">Inspect</button></td>
+        </tr>
+    `).join('');
+}
+
+function viewEventEvidence(eventId) {
+    const ev = recordedEvents.find(e => String(e.event_id) === String(eventId));
+    if (!ev) return;
+
+    document.getElementById('modal-title').textContent = `Evidence Review: ${ev.event_type}`;
+    document.getElementById('modal-meta').textContent = `Student: ${ev.student_name} (${ev.usn}) | Track: ${ev.track_id} | Time: ${ev.created_at} | Identity: ${ev.identity_source}`;
+
+    function toUrl(p) {
+        if (!p) return '';
+        if (p.startsWith('http://') || p.startsWith('https://')) return p;
+        return p.startsWith('/') ? p : '/' + p;
+    }
+
+    const videoEl = document.getElementById('modal-video');
+    videoEl.src = toUrl(ev.video_path);
+
+    const bestImg = document.getElementById('modal-best-photo');
+    bestImg.src = toUrl(ev.photo_path);
+
+    const strip = document.getElementById('modal-photo-strip');
+    const photoPath = (ev.photo_path || '').replace(/^\/+/, '');
+    const folder = photoPath.substring(0, photoPath.lastIndexOf('/'));
+    const names = ['before.jpg', 'event_start.jpg', 'best_event.jpg', 'event_end.jpg', 'after.jpg', 'student_crop.jpg'];
+    strip.innerHTML = names.map(n => `
+        <div style="text-align:center;">
+            <img src="/${folder}/${n}" style="height:70px; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="document.getElementById('modal-best-photo').src=this.src;" onerror="this.parentElement.style.opacity='0.4';">
+            <div style="font-size:9px;" class="muted">${n.replace('.jpg', '')}</div>
+        </div>
+    `).join('');
+
+    document.getElementById('evidence-modal').style.display = 'flex';
+}
+
+function closeEvidenceModal() {
+    document.getElementById('modal-video').pause();
+    document.getElementById('evidence-modal').style.display = 'none';
+}
+
+function openTimelineModal(usn, name) {
+    document.getElementById('timeline-student-name').textContent = `${name} — Observable Behavioral Timeline`;
+    document.getElementById('timeline-student-usn').textContent = `USN: ${usn}`;
+
+    const s = latestStudentList.find(st => st.usn === usn);
+    if (s && s.trends) {
+        const t = s.trends;
+        document.getElementById('timeline-trends').innerHTML = `
+            <div><strong>Observed Trend:</strong> <code>${t.trend}</code></div>
+            <div style="margin-top:4px;">Last 5 Min: <strong>${t.last_5_min.attentive}% Attentive</strong> | ${t.last_5_min.reading_writing}% Reading/Writing | ${t.last_5_min.off_task}% Off-task | ${t.last_5_min.head_down}% Head Down</div>
+            <div style="margin-top:2px;">Last 15 Min: <strong>${t.last_15_min.attentive}% Attentive</strong> | ${t.last_15_min.reading_writing}% Reading/Writing | ${t.last_15_min.off_task}% Off-task</div>
+        `;
+    } else {
+        document.getElementById('timeline-trends').textContent = 'Tracking session in progress. Sufficient window accumulating…';
+    }
+
+    if (s && s.risk_indicator) {
+        document.getElementById('timeline-predictions').innerHTML = `
+            <div><strong>Short-Term Observed Tendency:</strong> <code>${s.risk_indicator}</code></div>
+            <div class="muted" style="margin-top:4px; font-size:11px;">Derived strictly from observed session activity frequencies. Does not represent character or academic ability.</div>
+        `;
+    }
+
+    document.getElementById('timeline-modal').style.display = 'flex';
+}
+
+function closeTimelineModal() {
+    document.getElementById('timeline-modal').style.display = 'none';
+}
+</script>
+
+{% endif %}
+{% endblock %}

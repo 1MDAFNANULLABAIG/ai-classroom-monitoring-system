@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Face Setup{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Face Setup</h1>
+    <a href="{{ url_for('live_attendance') }}" class="btn btn-primary">📷 Go to Live Attendance</a>
+</div>
+
+<div class="panel">
+    <h3>Recognition Model</h3>
+    {% if model_trained %}
+        <p>✅ Model is trained (last trained: {{ trained_at }}).</p>
+    {% else %}
+        <p class="muted">⚠️ No model trained yet. Capture faces for at least one student below, then train.</p>
+    {% endif %}
+    <form method="POST" action="{{ url_for('face_train') }}"
+          onsubmit="return confirm('Train the recognition model using all captured face samples now?');">
+        <button type="submit" class="btn btn-primary">
+            {{ 'Re-train Model' if model_trained else 'Train Model' }}
+        </button>
+    </form>
+    <p class="muted" style="margin-top:10px;">
+        Tip: capture at least {{ samples_target }} clear, well-lit photos per student for reliable recognition.
+        Re-train any time after adding or clearing face data.
+    </p>
+</div>
+
+<table class="table">
+    <thead>
+        <tr><th>Roll No</th><th>Name</th><th>Class</th><th>Face Samples</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for s in students %}
+        <tr>
+            <td>{{ s.roll_no }}</td>
+            <td>{{ s.name }}</td>
+            <td>{{ s.class_name }}</td>
+            <td>
+                {% set n = samples.get(s.id, 0) %}
+                {% if n >= samples_target %}
+                    <span class="badge badge-present">{{ n }} / {{ samples_target }}</span>
+                {% elif n > 0 %}
+                    <span class="badge badge-late">{{ n }} / {{ samples_target }}</span>
+                {% else %}
+                    <span class="badge badge-absent">0 / {{ samples_target }}</span>
+                {% endif %}
+            </td>
+            <td>
+                <a href="{{ url_for('face_capture', student_id=s.id) }}" class="btn btn-secondary btn-sm">
+                    {{ 'Recapture' if samples.get(s.id, 0) > 0 else 'Capture Face' }}
+                </a>
+                {% if samples.get(s.id, 0) > 0 %}
+                <form method="POST" action="{{ url_for('face_capture_delete', student_id=s.id) }}"
+                      onsubmit="return confirm('Clear all captured face data for this student?');" style="display:inline">
+                    <button type="submit" class="btn btn-danger btn-sm">Clear</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="5" class="muted">No students yet. Add students first.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Behavior Prediction{% endblock %}
+{% block content %}
+<h1>🧠 AI Behavioral Prediction</h1>
+<p class="muted">
+    An early-warning score for each student, built from attendance patterns and
+    teacher-logged incidents over the last {{ lookback_days }} days. This is a
+    heuristic risk indicator, not a verdict — a "High" score means a pattern is
+    worth a conversation, not proof that anything specific happened or will happen.
+</p>
+
+<div class="flash flash-warning">
+    <strong>How to read this:</strong> this score is built only from attendance
+    history and incidents teachers log directly below (disruption, disrespect,
+    conflict, etc.) — it deliberately does not pull from the Exam Hall Monitor's
+    camera alerts, since a single exam-hall flag isn't evidence of an everyday
+    behavioral pattern. This page turns the log + attendance history into a
+    transparent, explainable risk score per student — never an automated
+    punishment trigger.
+</div>
+
+{% if not classes %}
+<div class="flash flash-warning">Add a class first.</div>
+{% else %}
+
+<form method="GET" class="inline-form">
+    <select name="class_id" onchange="this.form.submit()">
+        {% for c in classes %}
+        <option value="{{ c.id }}" {% if selected_class == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+</form>
+
+<div class="cards" style="margin-top:16px;">
+    <div class="card">
+        <h3>{{ risk_rows|length }}</h3>
+        <p>Students Scored</p>
+    </div>
+    <div class="card card-red">
+        <h3>{{ high_count }}</h3>
+        <p>High Risk</p>
+    </div>
+    <div class="card card-yellow">
+        <h3>{{ medium_count }}</h3>
+        <p>Medium Risk</p>
+    </div>
+</div>
+
+<div style="display:flex; gap:24px; flex-wrap:wrap; margin-top:16px;">
+    <div class="panel" style="flex:2; min-width:360px;">
+        <h3>Risk by Student</h3>
+        <table class="table">
+            <thead>
+                <tr><th>Roll No</th><th>Name</th><th>Risk</th><th>Score</th><th>Trend</th><th>Top Factor</th><th></th></tr>
+            </thead>
+            <tbody>
+            {% for r in risk_rows %}
+                <tr>
+                    <td>{{ r.roll_no }}</td>
+                    <td>{{ r.name }}</td>
+                    <td>
+                        <span class="badge badge-severity-{{ r.level|lower }}">{{ r.level }}</span>
+                    </td>
+                    <td>{{ r.score }}/100</td>
+                    <td>
+                        {% if r.trend == 'rising' %}
+                            <span class="badge badge-severity-high">Rising</span>
+                        {% elif r.trend == 'easing' %}
+                            <span class="badge badge-present">Easing</span>
+                        {% else %}
+                            <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="muted">{{ r.factors[0] }}</td>
+                    <td><a href="{{ url_for('behavior_student_detail', student_id=r.student_id) }}" class="btn btn-secondary btn-sm">View</a></td>
+                </tr>
+            {% else %}
+                <tr><td colspan="7" class="muted">No students in this class yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel" style="flex:1; min-width:300px;">
+        <h3>Log an Incident</h3>
+        <p class="muted">Recorded by a teacher/admin — this is what powers the score above.</p>
+        <form method="POST" action="{{ url_for('behavior_flag_add') }}">
+            <input type="hidden" name="class_id" value="{{ selected_class }}">
+            <input type="hidden" name="next" value="{{ url_for('behavior_dashboard', class_id=selected_class) }}">
+
+            <label>Student</label>
+            <select name="student_id" required>
+                <option value="">Select student…</option>
+                {% for s in students %}
+                <option value="{{ s.id }}">{{ s.roll_no }} — {{ s.name }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Incident type</label>
+            <select name="flag_type" required>
+                {% for t in flag_types %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Severity</label>
+            <select name="severity">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+            </select>
+
+            <label>Note (optional)</label>
+            <textarea name="note" rows="3" placeholder="Brief, factual description…"></textarea>
+
+            <button type="submit" class="btn btn-primary" style="margin-top:8px;">Log Incident</button>
+        </form>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
