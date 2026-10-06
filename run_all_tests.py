@@ -33,6 +33,7 @@ if __name__ == "__main__":
         loader.loadTestsFromName("test_teacher_first_attendance"),
         loader.loadTestsFromName("test_advanced_attendance_monitoring"),
         loader.loadTestsFromName("test_e2e_production"),
+        loader.loadTestsFromName("test_database_migration"),
     ]
     big_suite = unittest.TestSuite(suites)
     runner = unittest.TextTestRunner(verbosity=2)
@@ -48,7 +49,7 @@ if __name__ == "__main__":
     print("=" * 70)
 
     if result.wasSuccessful():
-        print(">>> ALL 116 TESTS PASSED WITH 100% SUCCESS <<<")
+        print(f">>> ALL {result.testsRun} TESTS PASSED WITH 100% SUCCESS <<<")
         sys.exit(0)
     else:
         print(">>> SOME TESTS FAILED <<<")

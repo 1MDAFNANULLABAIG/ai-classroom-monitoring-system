@@ -22,6 +22,7 @@ import json
 import random
 import base64
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -311,11 +312,13 @@ def init_db():
             name TEXT UNIQUE NOT NULL,
             start_time TEXT,
             end_time TEXT,
-            late_after_minutes INTEGER NOT NULL DEFAULT 10
+            late_after_minutes INTEGER NOT NULL DEFAULT 10,
+            department TEXT DEFAULT 'ISE',
+            semester INTEGER DEFAULT 5
         )
     """)
 
-    # Migration: add the schedule columns if this DB was created before they existed
+    # Migration: add schedule & modern columns if this DB was created before they existed
     existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(classes)").fetchall()}
     if "start_time" not in existing_cols:
         cur.execute("ALTER TABLE classes ADD COLUMN start_time TEXT")
@@ -323,30 +326,54 @@ def init_db():
         cur.execute("ALTER TABLE classes ADD COLUMN end_time TEXT")
     if "late_after_minutes" not in existing_cols:
         cur.execute("ALTER TABLE classes ADD COLUMN late_after_minutes INTEGER NOT NULL DEFAULT 10")
+    if "department" not in existing_cols:
+        cur.execute("ALTER TABLE classes ADD COLUMN department TEXT DEFAULT 'ISE'")
+    if "semester" not in existing_cols:
+        cur.execute("ALTER TABLE classes ADD COLUMN semester INTEGER DEFAULT 5")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             roll_no TEXT NOT NULL,
             name TEXT NOT NULL,
+            usn TEXT,
             class_id INTEGER NOT NULL,
             email TEXT,
             phone TEXT,
+            department TEXT DEFAULT 'ISE',
+            current_semester INTEGER DEFAULT 5,
+            section TEXT DEFAULT 'A',
+            admission_year TEXT DEFAULT '2023',
+            status TEXT NOT NULL DEFAULT 'active',
+            status_set_at TEXT,
+            face_deleted_at TEXT,
             FOREIGN KEY (class_id) REFERENCES classes (id) ON DELETE CASCADE,
             UNIQUE(roll_no, class_id)
         )
     """)
 
-    # Migration: status fields used by Automatic Data Expiry (9.4) --
-    # lets an admin mark a student graduated/inactive, which (after a
-    # grace period) makes their face photos eligible for deletion.
+    # Migration: ensure all modern student columns exist on legacy databases
     existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(students)").fetchall()}
+    if "usn" not in existing_cols:
+        cur.execute("ALTER TABLE students ADD COLUMN usn TEXT")
+        # Backfill USN from roll_no for existing student records
+        cur.execute("UPDATE students SET usn = roll_no WHERE usn IS NULL OR usn = ''")
+    if "department" not in existing_cols:
+        cur.execute("ALTER TABLE students ADD COLUMN department TEXT DEFAULT 'ISE'")
+    if "current_semester" not in existing_cols:
+        cur.execute("ALTER TABLE students ADD COLUMN current_semester INTEGER DEFAULT 5")
+    if "section" not in existing_cols:
+        cur.execute("ALTER TABLE students ADD COLUMN section TEXT DEFAULT 'A'")
+    if "admission_year" not in existing_cols:
+        cur.execute("ALTER TABLE students ADD COLUMN admission_year TEXT DEFAULT '2023'")
     if "status" not in existing_cols:
         cur.execute("ALTER TABLE students ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
     if "status_set_at" not in existing_cols:
         cur.execute("ALTER TABLE students ADD COLUMN status_set_at TEXT")
     if "face_deleted_at" not in existing_cols:
         cur.execute("ALTER TABLE students ADD COLUMN face_deleted_at TEXT")
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_students_usn ON students(usn)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
@@ -571,25 +598,44 @@ def init_db():
             session_id INTEGER NOT NULL,
             student_id INTEGER,
             student_name TEXT,
+            usn TEXT,
             alert_type TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'low',
             detail TEXT,
+            confidence REAL,
+            duration_seconds REAL,
             photo_path TEXT,
+            video_path TEXT,
+            review_status TEXT DEFAULT 'pending',
+            reviewed_by TEXT,
+            reviewed_at TEXT,
+            review_notes TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY (session_id) REFERENCES activeness_sessions (id) ON DELETE CASCADE,
             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE SET NULL
         )
     """)
 
-    # Migration: severity + a short buffered video clip for the escalated
-    # "sleeping" / "phone_use_sustained" bands (activeness_ai.py). The clip
-    # is recorded client-side (the server only ever sees single JPEG
-    # frames) and uploaded separately once the browser learns an alert
-    # needs one -- see activeness_alert_video() below.
+    # Migration: severity, video, USN, and review attribution for alerts
     existing_cols = {row["name"] for row in cur.execute("PRAGMA table_info(activeness_alerts)").fetchall()}
     if "severity" not in existing_cols:
         cur.execute("ALTER TABLE activeness_alerts ADD COLUMN severity TEXT NOT NULL DEFAULT 'low'")
     if "video_path" not in existing_cols:
         cur.execute("ALTER TABLE activeness_alerts ADD COLUMN video_path TEXT")
+    if "usn" not in existing_cols:
+        cur.execute("ALTER TABLE activeness_alerts ADD COLUMN usn TEXT")
+    if "confidence" not in existing_cols:
+        cur.execute("ALTER TABLE activeness_alerts ADD COLUMN confidence REAL")
+    if "duration_seconds" not in existing_cols:
+        cur.execute("ALTER TABLE activeness_alerts ADD COLUMN duration_seconds REAL")
+    if "review_status" not in existing_cols:
+        cur.execute("ALTER TABLE activeness_alerts ADD COLUMN review_status TEXT DEFAULT 'pending'")
+    if "reviewed_by" not in existing_cols:
+        cur.execute("ALTER TABLE activeness_alerts ADD COLUMN reviewed_by TEXT")
+    if "reviewed_at" not in existing_cols:
+        cur.execute("ALTER TABLE activeness_alerts ADD COLUMN reviewed_at TEXT")
+    if "review_notes" not in existing_cols:
+        cur.execute("ALTER TABLE activeness_alerts ADD COLUMN review_notes TEXT")
 
     # --- Discipline flags (feed data for Behavioral Risk Prediction, 9.1) ---
     # A teacher-logged incident note. Deliberately NOT auto-generated from
@@ -727,6 +773,89 @@ def init_db():
         )
     """)
 
+    # --- Live Classroom Monitoring & Activity Tables ---
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS student_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            track_id INTEGER NOT NULL,
+            student_id INTEGER,
+            usn TEXT,
+            student_name TEXT,
+            activity_state TEXT,
+            attention_state TEXT,
+            facial_expression TEXT,
+            id_card_status TEXT,
+            uniform_status TEXT,
+            seat_status TEXT,
+            confidence REAL,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES activeness_sessions (id) ON DELETE CASCADE,
+            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE SET NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_student_activity_usn ON student_activity(usn)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_student_activity_session ON student_activity(session_id)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS classroom_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            track_id INTEGER,
+            student_id INTEGER,
+            usn TEXT,
+            student_name TEXT,
+            alert_type TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'medium',
+            detail TEXT,
+            confidence REAL,
+            duration_seconds REAL,
+            photo_path TEXT,
+            video_path TEXT,
+            identity_source TEXT DEFAULT 'FACE_VERIFIED',
+            review_status TEXT DEFAULT 'pending',
+            reviewed_by TEXT,
+            reviewed_at TEXT,
+            review_notes TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES activeness_sessions (id) ON DELETE CASCADE,
+            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE SET NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_classroom_alerts_session ON classroom_alerts(session_id)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS classroom_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            timestamp TEXT NOT NULL,
+            total_students INTEGER DEFAULT 0,
+            present_count INTEGER DEFAULT 0,
+            absent_count INTEGER DEFAULT 0,
+            unknown_count INTEGER DEFAULT 0,
+            activity_index REAL DEFAULT 0.0,
+            engagement_level TEXT DEFAULT 'NORMAL',
+            breakdown_json TEXT,
+            FOREIGN KEY (session_id) REFERENCES activeness_sessions (id) ON DELETE CASCADE
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_classroom_metrics_session ON classroom_metrics(session_id)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS behavior_predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            usn TEXT NOT NULL,
+            prediction_indicator TEXT,
+            confidence REAL,
+            basis_summary TEXT,
+            recommendation TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE SET NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_behavior_predictions_usn ON behavior_predictions(usn)")
+
     # Create default admin user if none exists
     cur.execute("SELECT COUNT(*) AS c FROM users")
     if cur.fetchone()["c"] == 0:
@@ -742,6 +871,28 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+    global _db_initialized
+    _db_initialized = True
+
+
+_db_initialized = False
+_db_init_lock = threading.Lock()
+
+
+def ensure_db_initialized():
+    """Thread-safe one-time automatic database schema check & migration."""
+    global _db_initialized
+    if not _db_initialized:
+        with _db_init_lock:
+            if not _db_initialized:
+                init_db()
+
+
+@app.before_request
+def _auto_init_db_hook():
+    """Ensure database schema is up-to-date on all incoming requests."""
+    ensure_db_initialized()
 
 
 def ensure_face_dirs():
@@ -1509,10 +1660,11 @@ def add_student():
             flash("Roll number, name, and class are required.", "danger")
         else:
             try:
+                usn = request.form.get("usn", "").strip() or roll_no
                 conn.execute(
-                    """INSERT INTO students (roll_no, name, class_id, email, phone)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (roll_no, name, class_id, email, phone)
+                    """INSERT INTO students (roll_no, name, usn, class_id, email, phone)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (roll_no, name, usn, class_id, email, phone)
                 )
                 conn.commit()
                 flash(f'Student "{name}" added.', "success")
@@ -1555,10 +1707,11 @@ def edit_student(student_id):
             status_set_at = datetime.now().isoformat(timespec="seconds") if status != "active" else None
 
         try:
+            usn = request.form.get("usn", "").strip() or (student["usn"] if "usn" in student.keys() and student["usn"] else roll_no)
             conn.execute(
-                """UPDATE students SET roll_no=?, name=?, class_id=?, email=?, phone=?,
+                """UPDATE students SET roll_no=?, name=?, usn=?, class_id=?, email=?, phone=?,
                    status=?, status_set_at=? WHERE id = ?""",
-                (roll_no, name, class_id, email, phone, status, status_set_at, student_id)
+                (roll_no, name, usn, class_id, email, phone, status, status_set_at, student_id)
             )
             conn.commit()
             flash("Student updated.", "success")

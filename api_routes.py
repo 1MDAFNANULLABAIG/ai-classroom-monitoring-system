@@ -190,6 +190,7 @@ def create_class():
     if not name:
         return jsonify({"success": False, "error": "Class name is required."}), 400
 
+    app.ensure_db_initialized()
     conn = app.get_db()
     try:
         cur = conn.cursor()
@@ -266,9 +267,20 @@ def create_student():
     if not name or not roll_no or not class_id:
         return jsonify({"success": False, "error": "Name, Roll No/USN, and Class are required."}), 400
 
+    app.ensure_db_initialized()
     conn = app.get_db()
     try:
         cur = conn.cursor()
+        cls_row = cur.execute("SELECT id FROM classes WHERE id = ?", (class_id,)).fetchone()
+        if not cls_row:
+            # Fallback to first available class if an invalid ID was passed
+            fallback_cls = cur.execute("SELECT id FROM classes ORDER BY id ASC LIMIT 1").fetchone()
+            if fallback_cls:
+                class_id = fallback_cls["id"]
+            else:
+                conn.close()
+                return jsonify({"success": False, "error": f"Class with ID {class_id} not found."}), 400
+
         cur.execute(
             """INSERT INTO students 
                (name, roll_no, usn, class_id, email, phone, department, current_semester, section, admission_year, status) 
@@ -279,9 +291,12 @@ def create_student():
         new_id = cur.lastrowid
         conn.close()
         return jsonify({"success": True, "id": new_id, "message": "Student registered successfully."})
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as ie:
         conn.rollback()
         conn.close()
+        err_msg = str(ie).lower()
+        if "foreign key" in err_msg:
+            return jsonify({"success": False, "error": "Selected class does not exist."}), 400
         return jsonify({"success": False, "error": "Roll Number or USN already exists."}), 409
     except Exception as e:
         conn.rollback()
